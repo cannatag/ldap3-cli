@@ -1,2 +1,2 @@
-- 0.0.1a not yet released
-    setting dev environment
+- 0.0.1a1 not yet released
+    defined dev environment structure
