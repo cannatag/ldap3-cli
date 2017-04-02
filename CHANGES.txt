@@ -1,0 +1,6 @@
+# changes file for ldap3cli
+# generated on 2017-04-03 00:18:42.771020
+# version 0.0.1a1
+
+- 0.0.1a not yet released
+    setting dev environment
