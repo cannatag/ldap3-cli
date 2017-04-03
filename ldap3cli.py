@@ -28,7 +28,7 @@ class Session(object):
 
 @click.group()
 @click.option('-h', '--host', default='localhost')
-@click.option('-p', '--port', default=389)
+@click.option('-p', '--port', default=389, type=click.IntRange(0, 65535))
 @click.option('-d', '--dn')
 @click.option('-w', '--password')
 @click.option('-s', '--ssl', is_flag=True)
