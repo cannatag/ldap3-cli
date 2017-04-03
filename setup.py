@@ -12,6 +12,7 @@ package_name = str(version_dict['package_name'])
 package_folder = str(version_dict['package_folder'])
 status = str(version_dict['status'])
 print([i.strip() for i in open('requirements.txt').readlines()])
+
 setup(
     name=package_name,
     version=version,

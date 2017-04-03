@@ -5,3 +5,4 @@ import click
 def cli():
     """Example script."""
     click.echo('Hello World!')
+
