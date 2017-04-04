@@ -69,14 +69,14 @@ def info(session):
 @cli.command()
 @click.pass_obj
 @click.option('-s', '--scope', type=click.Choice(['BASE', 'LEVEL', 'SUBTREE']), default='SUBTREE')
-@click.option('-b', '--base', type=click.STRING)
-@click.option('-f', '--filter', default='(objectclass=*)')
-@click.option('-a', '--attr', required=False, nargs=-1, type=click.STRING)
-def search(session, base, filter, attributes, scope):
+@click.argument('base', type=click.STRING)
+@click.argument('filter', required=False, default='(objectclass=*)')
+@click.argument('attrs', nargs=-1, type=click.STRING)
+def search(session, base, filter, attrs, scope):
     """Search and return entries"""
     session.connect()
     try:
-        session.connection.search(base, filter, scope, attributes=attributes)
+        session.connection.search(base, filter, scope, attributes=attrs)
     except LDAPInvalidFilterError:
         raise click.ClickException('invalid filter: %s' % filter)
     for e in session.connection.entries:
