@@ -43,13 +43,13 @@ class Session(object):
                 raise click.ClickException('unable to connect to %s on port %s - reason: %s' % (self.host, self.port, e.args[0] if isinstance(e.args, SEQUENCE_TYPES) else e))
 
 @click.group()
-@click.option('-h', '--host', default='localhost')
-@click.option('-p', '--port', default=389, type=click.IntRange(0, 65535))
-@click.option('-u', '--user')
+@click.option('-h', '--host', default='localhost', help='LDAP server hostname or ip address')
+@click.option('-p', '--port', default=389, type=click.IntRange(0, 65535), help='LDAP server port')
+@click.option('-u', '--user', help='dn or user name')
 @click.option('-w', '--password')
-@click.option('-W', '--request-password', is_flag=True)
-@click.option('-s', '--ssl', is_flag=True)
-@click.option('-d', '--debug', is_flag=True)
+@click.option('-W', '--request-password', is_flag=True, help='hidden password prompt at runtime')
+@click.option('-s', '--ssl', is_flag=True, help='establish a SSL/TLS connection')
+@click.option('-d', '--debug', is_flag=True, help='enable debug output')
 
 @click.pass_context
 def cli(ctx, host, port, user, password, ssl, debug, request_password):
@@ -66,12 +66,13 @@ def info(session):
     session.connect()
     session.echo()
 
+
 @cli.command()
 @click.pass_obj
-@click.option('-s', '--scope', type=click.Choice(['BASE', 'LEVEL', 'SUBTREE']), default='SUBTREE')
-@click.argument('base', type=click.STRING)
-@click.argument('filter', required=False, default='(objectclass=*)')
-@click.argument('attrs', nargs=-1, type=click.STRING)
+@click.option('-s', '--scope', type=click.Choice(['BASE', 'LEVEL', 'SUBTREE']), default='SUBTREE', help='scope of search')
+@click.argument('base', type=click.STRING, 'starting level of search')
+@click.argument('filter', required=False, default='(objectclass=*)', help='search LDAP filter')
+@click.argument('attrs', nargs=-1, type=click.STRING, help='attributes to return')
 def search(session, base, filter, attrs, scope):
     """Search and return entries"""
     session.connect()
