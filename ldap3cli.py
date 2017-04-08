@@ -1,8 +1,25 @@
 import socket
 
 import click
-from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE
+from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE, ALL
 from ldap3.core.exceptions import LDAPSocketOpenError, LDAPInvalidFilterError
+
+bg = 'black'
+fg = 'white'
+error_fg = 'red'
+error_bg = 'black'
+title_fg = 'yellow'
+title_bg = 'black'
+
+def echo_title(string, level=0):
+    click.secho('  ' * level + string, fg=title_fg, bg=title_bg)
+
+def echo_detail(desc, value, error=False, level=1):
+    click.secho('  ' * level + desc + ': ', fg=fg, bg=bg, nl=False)
+    if error:
+        click.secho(str(value), fg=error_fg, bg=error_bg, bold=True)
+    else:
+        click.secho(str(value), fg=fg, bg=bg, bold=True)
 
 class Session(object):
     def __init__(self, host='localhost', port=389, use_ssl=False, user=None, password=None, authentication=SIMPLE, debug=False):
@@ -15,52 +32,52 @@ class Session(object):
         self.connection = None
         self.authentication = authentication
         self.debug =  debug
-        self.server = Server(self.host, self.port, self.use_ssl)
+        self.server = Server(self.host, self.port, self.use_ssl, get_info=ALL)
         self.connection = Connection(self.server, self.user, self.password, authentication=authentication, raise_exceptions=False)
         self.login_result=None
 
     def echo(self):
-        bg = 'black'
-        fg = 'white'
-        err = 'red'
-        title = 'yellow'
-        click.secho('Connection info:', fg=title)
+
+        echo_title('Connection info')
         click.secho('  Status: ', fg=fg, bg=bg, nl=False)
         if self.connection.bound:
             click.secho('valid', fg=fg, bg=bg, bold=True)
         else:
             click.secho('NOT valid', fg=fg, bg=bg, bold=True, nl=False)
-            click.secho(' [REASON: ' + str(self.login_result) + ']', fg=err, bg=bg, bold=True)
-        click.secho('  Host: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.server.name), fg=fg, bg=bg, bold=True)
-        click.secho('  Port: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.server.port), fg=fg, bg=bg, bold=True)
-        click.secho('  Encryption: ', fg=fg, bg=bg, nl=False)
-        click.secho(' session is using SSL' if self.use_ssl else ' session is in CLEARTEXT', fg=fg, bg=bg, bold=True)
-        click.secho('  User: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.user), fg=fg, bg=bg, bold=True)
-        click.secho('  Authentication: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.authentication), fg=fg, bg=bg, bold=True)
-        click.secho('Socket info:', fg=title)
-        click.secho('  Family: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.socket.family), fg=fg, bg=bg, bold=True)
-        click.secho('  Type: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.socket.type), fg=fg, bg=bg, bold=True)
-        click.secho('  Local: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.socket.getsockname()), fg=fg, bg=bg, bold=True)
-        click.secho('  Remote: ', fg=fg, bg=bg, nl=False)
-        click.secho(str(self.connection.socket.getpeername()), fg=fg, bg=bg, bold=True)
-        click.secho('TLS info:', fg=title)
+            click.secho(' [REASON: ' + str(self.login_result) + ']', error=True)
+        echo_detail('Host', self.connection.server.host)
+        echo_detail('Port', self.connection.server.port)
+        echo_detail('Encryption', ' session is using SSL' if self.use_ssl else ' session is in CLEARTEXT')
+        echo_detail('User', self.connection.user)
+        echo_detail('Authentication', self.connection.authentication)
+        echo_title('Socket info')
+        echo_detail('Family', self.connection.socket.family)
+        echo_detail('Type', self.connection.socket.type)
+        echo_title('Endopoints', 1)
+        echo_detail('Local', self.connection.socket.getsockname(), level=2)
+        echo_detail('Remote', self.connection.socket.getpeername(), level=2)
+        echo_title('TLS info')
         if self.connection.server.ssl:
-            click.secho('  TLS status: ', fg=fg, bg=bg, nl=False)
-            click.secho('established', fg=fg, bg=bg, bold=True)
-            click.secho('  TLS version: ', fg=fg, bg=bg, nl=False)
-            click.secho(str(self.connection.socket.version()), fg=fg, bg=bg, bold=True)
-            click.secho('  TLS cipher: ', fg=fg, bg=bg, nl=False)
-            click.secho(str(self.connection.socket.cipher()), fg=fg, bg=bg, bold=True)
+            echo_detail('TLS status', 'established')
+            echo_detail('TLS version', self.connection.socket.version())
+            echo_detail('TLS cipher', self.connection.socket.cipher())
         else:
-            click.secho('  TLS status: ', fg=fg, bg=bg, nl=False)
-            click.secho('NOT established', fg=err, bg=bg, bold=True)
+            echo_detail('TLS status', 'NOT established', error=True)
+        echo_title('Server info')
+        try:
+            echo_detail('LDAP version', self.connection.server.info.supported_ldap_versions)
+        except Exception:
+            pass
+        try:
+            echo_detail('Vendor', str(self.connection.server.info.vendor_name) + '[' + str(self.connection.server.info.vendor_version) + ']')
+        except Exception:
+            pass
+
+        echo_detail('Alternative servers', self.connection.server.info.alt_servers)
+        echo_detail('SASL mechanisms', self.connection.server.info.supported_sasl_mechanisms)
+
+
+
     def connect(self):
         if self.connection and not self.connection.bound:
             try:
