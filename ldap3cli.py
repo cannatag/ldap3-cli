@@ -1,12 +1,11 @@
 import socket
 
 import click
-from ldap3 import Server, Connection, SEQUENCE_TYPES
-from ldap3.core.exceptions import LDAPExceptionError, LDAPSocketOpenError, LDAPInvalidFilterError
-
+from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE
+from ldap3.core.exceptions import LDAPSocketOpenError, LDAPInvalidFilterError
 
 class Session(object):
-    def __init__(self, host='localhost', port=389, use_ssl=False, user=None, password=None, debug=False):
+    def __init__(self, host='localhost', port=389, use_ssl=False, user=None, password=None, authentication=SIMPLE, debug=False):
         self.host = host
         self.port = port
         self.use_ssl = use_ssl
@@ -14,40 +13,54 @@ class Session(object):
         self.password = password
         self.server = None
         self.connection = None
+        self.authentication = authentication
         self.debug =  debug
         self.server = Server(self.host, self.port, self.use_ssl)
-        self.connection = Connection(self.server, self.user, self.password, raise_exceptions=False)
+        self.connection = Connection(self.server, self.user, self.password, authentication=authentication, raise_exceptions=False)
         self.login_result=None
 
     def echo(self):
         bg = 'black'
         fg = 'white'
-        click.secho('HOST ' + self.host, fg=fg, bg=bg, bold=True, nl=False)
-        click.secho(' - PORT ' + str(self.port), fg=fg, bg=bg, bold=True, nl=False)
-        click.secho(' - session is using SSL' if self.use_ssl else ' - session is in CLEARTEXT', fg=fg, bold=True, bg=bg, nl=False)
-        click.secho(' - USER: ' + str(self.user), fg=fg, bg=bg, bold=True, nl=False)
+        err = 'red'
+        title = 'yellow'
+        click.secho('Connection info:', fg=title)
+        click.secho('  Status: ', fg=fg, bg=bg, nl=False)
         if self.connection.bound:
-            click.secho(' - STATUS: valid', fg=fg, bg=bg, bold=True)
+            click.secho('valid', fg=fg, bg=bg, bold=True)
         else:
-            click.secho(' - STATUS: NOT valid', fg='red', bg=bg, bold=True, nl=False)
-            click.secho(' [REASON: ' + str(self.login_result) + ']', fg='red', bg=bg, bold=True)
-        if self.debug:
-            click.secho(str(self.connection))
-        click.secho('Socket info:')
-        click.secho('Family: ', fg=fg, bg=bg, nl=False)
+            click.secho('NOT valid', fg=fg, bg=bg, bold=True, nl=False)
+            click.secho(' [REASON: ' + str(self.login_result) + ']', fg=err, bg=bg, bold=True)
+        click.secho('  Host: ', fg=fg, bg=bg, nl=False)
+        click.secho(str(self.connection.server.name), fg=fg, bg=bg, bold=True)
+        click.secho('  Port: ', fg=fg, bg=bg, nl=False)
+        click.secho(str(self.connection.server.port), fg=fg, bg=bg, bold=True)
+        click.secho('  Encryption: ', fg=fg, bg=bg, nl=False)
+        click.secho(' session is using SSL' if self.use_ssl else ' session is in CLEARTEXT', fg=fg, bg=bg, bold=True)
+        click.secho('  User: ', fg=fg, bg=bg, nl=False)
+        click.secho(str(self.connection.user), fg=fg, bg=bg, bold=True)
+        click.secho('  Authentication: ', fg=fg, bg=bg, nl=False)
+        click.secho(str(self.connection.authentication), fg=fg, bg=bg, bold=True)
+        click.secho('Socket info:', fg=title)
+        click.secho('  Family: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.family), fg=fg, bg=bg, bold=True)
-        click.secho('Type: ', fg=fg, bg=bg, nl=False)
+        click.secho('  Type: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.type), fg=fg, bg=bg, bold=True)
-        click.secho('Local: ', fg=fg, bg=bg, nl=False)
+        click.secho('  Local: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.getsockname()), fg=fg, bg=bg, bold=True)
-        click.secho('Remote: ', fg=fg, bg=bg, nl=False)
+        click.secho('  Remote: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.getpeername()), fg=fg, bg=bg, bold=True)
+        click.secho('TLS info:', fg=title)
         if self.connection.server.ssl:
-            click.secho('TLS version: ', fg=fg, bg=bg, nl=False)
+            click.secho('  TLS status: ', fg=fg, bg=bg, nl=False)
+            click.secho('established', fg=fg, bg=bg, bold=True)
+            click.secho('  TLS version: ', fg=fg, bg=bg, nl=False)
             click.secho(str(self.connection.socket.version()), fg=fg, bg=bg, bold=True)
-            click.secho('TLS cipher: ', fg=fg, bg=bg, nl=False)
+            click.secho('  TLS cipher: ', fg=fg, bg=bg, nl=False)
             click.secho(str(self.connection.socket.cipher()), fg=fg, bg=bg, bold=True)
-
+        else:
+            click.secho('  TLS status: ', fg=fg, bg=bg, nl=False)
+            click.secho('NOT established', fg=err, bg=bg, bold=True)
     def connect(self):
         if self.connection and not self.connection.bound:
             try:
@@ -66,6 +79,7 @@ class Session(object):
             self.login_result = self.connection.last_error
 
 @click.group()
+@click.option('-a', '--authentication', type=click.Choice(['ANONYMOUS', 'SIMPLE', 'SASL', 'NTLM']), default='SIMPLE', help='type of authentication')
 @click.option('-h', '--host', default='localhost', help='LDAP server hostname or ip address')
 @click.option('-p', '--port', type=click.IntRange(0, 65535), help='LDAP server port')
 @click.option('-u', '--user', help='dn or user name')
@@ -73,10 +87,8 @@ class Session(object):
 @click.option('-W', '--request-password', is_flag=True, help='hidden prompt for password at runtime')
 @click.option('-s', '--ssl', is_flag=True, help='establish a SSL/TLS connection')
 @click.option('-d', '--debug', is_flag=True, help='enable debug output')
-
-
 @click.pass_context
-def cli(ctx, host, port, user, password, ssl, debug, request_password):
+def cli(ctx, host, port, user, password, ssl, debug, request_password, authentication):
     """LDAP for humans"""
     if request_password and not password:
         password = click.prompt('Password <will not be shown>', hide_input=True, type=click.STRING)
@@ -84,7 +96,7 @@ def cli(ctx, host, port, user, password, ssl, debug, request_password):
         port = 636
     elif not port:
         port = 389
-    ctx.obj = Session(host, port, ssl, user, password, debug)
+    ctx.obj = Session(host, port, ssl, user, password, authentication, debug)
 
 
 @cli.command()
