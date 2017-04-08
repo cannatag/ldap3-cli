@@ -1,3 +1,5 @@
+import socket
+
 import click
 from ldap3 import Server, Connection, SEQUENCE_TYPES
 from ldap3.core.exceptions import LDAPExceptionError, LDAPSocketOpenError, LDAPInvalidFilterError
@@ -34,12 +36,17 @@ class Session(object):
         click.secho('Socket info:')
         click.secho('Family: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.family), fg=fg, bg=bg, bold=True)
+        click.secho('Type: ', fg=fg, bg=bg, nl=False)
+        click.secho(str(self.connection.socket.type), fg=fg, bg=bg, bold=True)
         click.secho('Local: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.getsockname()), fg=fg, bg=bg, bold=True)
         click.secho('Remote: ', fg=fg, bg=bg, nl=False)
         click.secho(str(self.connection.socket.getpeername()), fg=fg, bg=bg, bold=True)
-        click.echo(self.connection.socket)
-        click.echo
+        if self.connection.server.ssl:
+            click.secho('TLS version: ', fg=fg, bg=bg, nl=False)
+            click.secho(str(self.connection.socket.version()), fg=fg, bg=bg, bold=True)
+            click.secho('TLS cipher: ', fg=fg, bg=bg, nl=False)
+            click.secho(str(self.connection.socket.cipher()), fg=fg, bg=bg, bold=True)
 
     def connect(self):
         if self.connection and not self.connection.bound:
