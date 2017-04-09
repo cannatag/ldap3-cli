@@ -96,10 +96,9 @@ def info(session, schema):
     echo_title('Connection info')
     click.secho('  Status: ', fg=fg, bg=bg, nl=False)
     if session.connection.bound:
-        click.secho('valid', fg=fg, bg=bg, bold=True)
+        echo_detail('Status', 'valid')
     else:
-        click.secho('NOT valid', fg=fg, bg=bg, bold=True, nl=False)
-        click.secho(' [REASON: ' + str(session.login_result) + ']', error=True)
+        echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
     echo_detail('Host', session.connection.server.host)
     echo_detail('Port', session.connection.server.port)
     echo_detail('Encryption', ' session is using SSL' if session.use_ssl else ' session is in CLEARTEXT')
