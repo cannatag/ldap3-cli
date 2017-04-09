@@ -94,7 +94,6 @@ def info(session, schema):
     """Bind and get info"""
     session.connect()
     echo_title('Connection info')
-    click.secho('  Status: ', fg=fg, bg=bg, nl=False)
     if session.connection.bound:
         echo_detail('Status', 'valid')
     else:
@@ -122,22 +121,31 @@ def info(session, schema):
         echo_detail('Status', 'NO INFO returned by server', error=True)
     else:
         echo_detail('Status', 'INFO returned by server')
-        try:
-            echo_detail('LDAP version', str(', '.join(session.connection.server.info.supported_ldap_versions)))
-        except Exception:
-            pass
-        try:
-            echo_detail('Vendor', str(', '.join(session.connection.server.info.vendor_name)) + '[' + str(', '.join(session.connection.server.info.vendor_version)) + ']')
-        except Exception:
-            pass
-        try:
-            echo_detail('Alternative servers', ', '.join(session.connection.server.info.alt_servers))
-        except Exception:
-            pass
-        try:
-            echo_detail('SASL mechanisms', ', '.join(session.connection.server.info.supported_sasl_mechanisms))
-        except Exception:
-            pass
+        if session.connection.server.info.supported_ldap_versions:
+            echo_detail('Supported LDAP versions', ' - '.join(sorted(session.connection.server.info.supported_ldap_versions if isinstance(session.connection.server.info.supported_ldap_versions, SEQUENCE_TYPES) else session.connection.server.info.supported_ldap_versions)))
+        if session.connection.server.info.supported_sasl_mechanisms:
+            echo_detail('Supported SASL mechanisms', ' - '.join(sorted(session.connection.server.info.supported_sasl_mechanisms) if isinstance(session.connection.server.info.supported_sasl_mechanisms, SEQUENCE_TYPES) else session.connection.server.info.supported_sasl_mechanisms))
+        if session.connection.server.info.vendor_name:
+            echo_detail('Vendor name', ' - '.join(session.connection.server.info.vendor_name) if isinstance(session.connection.server.info.vendor_name, SEQUENCE_TYPES) else session.connection.server.info.vendor_name)
+        if session.connection.server.info.vendor_version:
+            echo_detail('Vendor version', ' - '.join(session.connection.server.info.vendor_version) if isinstance(session.connection.server.info.vendor_version, SEQUENCE_TYPES) else session.connection.server.info.vendor_version)
+        if session.connection.server.info.alt_servers:
+            echo_detail('Alternate servers', ' - '.join(sorted(session.connection.server.info.alt_servers)) if isinstance(session.connection.server.info.alt_servers, SEQUENCE_TYPES) else session.connection.server.info.alt_servers)
+        print(session.connection.server.info.naming_contexts)
+        if session.connection.server.info.naming_contexts:
+            echo_detail('Naming contexts', ' - '.join(sorted(session.connection.server.info.naming_contexts)) if isinstance(session.connection.server.info.naming_contexts, SEQUENCE_TYPES) else session.connection.server.info.naming_contexts)
+        if session.connection.server.info.supported_controls:
+            echo_detail('Supported controls', ' - '.join(sorted([element[0] + ' [' + (element[2] if element[2] else '<unknown>') + ']' for element in session.connection.server.info.supported_controls])))
+        if session.connection.server.info.supported_extensions:
+            echo_detail('Supported extensions', ' - '.join(sorted([element[0] + ' [' + (element[2] if element[2] else '<unknown>') + ']' for element in session.connection.server.info.supported_extensions])))
+        if session.connection.server.info.supported_features:
+            echo_detail('Supported features', ' - '.join(sorted([element[0] + ' [' + (element[2] if element[2] else '<unknown>') + ']' for element in session.connection.server.info.supported_features])))
+        if session.connection.server.info.schema_entry:
+            echo_detail('Schema entry', ' - '.join(session.connection.server.info.schema_entry) if isinstance(session.connection.server.info.schema_entry, SEQUENCE_TYPES) else session.connection.server.info.schema_entry)
+        if session.connection.server.info.other:
+            echo_detail('Other info', '')
+            for key, value in session.connection.server.info.other.items():
+                echo_detail(key, ' - '.join(value) if isinstance(value, SEQUENCE_TYPES) else value, level=2)
 
     echo_title('Schema info')
     if not session.connection.server.schema:
