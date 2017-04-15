@@ -46,6 +46,7 @@ def echo_detail_multiline(desc, value, error=False, level=1):
         else:
             echo_detail(' ' * len(desc), line)
 
+
 class Session(object):
     def __init__(self, host, port, use_ssl, user, password, authentication, get_info, usage, debug):
         self.host = host
@@ -87,7 +88,7 @@ class Session(object):
             self.login_result = self.connection.last_error
 
 @click.group()
-@click.option('-a', '--authentication', type=click.Choice(['ANONYMOUS', 'SIMPLE', 'SASL', 'NTLM']), default='SIMPLE', help='type of authentication')
+@click.option('-a', '--authentication', type=click.Choice(['ANONYMOUS', 'SIMPLE', 'SASL', 'NTLM']), help='type of authentication')
 @click.option('-h', '--host', default='localhost', help='LDAP server hostname or ip address')
 @click.option('-p', '--port', type=click.IntRange(0, 65535), help='LDAP server port')
 @click.option('-u', '--user', help='dn or user name')
@@ -170,9 +171,9 @@ def info(session, type, json):
                 if session.connection.server.info.schema_entry:
                     echo_detail('Schema entry', ' - '.join(session.connection.server.info.schema_entry) if isinstance(session.connection.server.info.schema_entry, SEQUENCE_TYPES) else session.connection.server.info.schema_entry)
                 if session.connection.server.info.other:
-                    echo_detail('Other info', '')
+                    echo_title('Other info')
                     for key, value in session.connection.server.info.other.items():
-                        echo_detail(key, ' - '.join(value) if isinstance(value, SEQUENCE_TYPES) else value, level=2)
+                        echo_detail(key, ' - '.join(value) if isinstance(value, SEQUENCE_TYPES) else value)
     if type in ['schema', 'all']:
         if json:
             echo_detail_multiline('', session.connection.server.schema.to_json())
