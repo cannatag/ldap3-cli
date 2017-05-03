@@ -2,7 +2,7 @@ import socket
 from operator import itemgetter
 
 import click
-from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE, NONE, DSA, SCHEMA, ALL, STRING_TYPES, ANONYMOUS
+from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE, NONE, DSA, SCHEMA, ALL, STRING_TYPES, ANONYMOUS, SASL, NTLM, BASE, LEVEL, SUBTREE
 from ldap3.core.exceptions import LDAPSocketOpenError, LDAPInvalidFilterError
 from ldap3.protocol.oid import decode_syntax
 
@@ -27,6 +27,7 @@ def display_entry(counter, entry):
     echo_detail(str(counter).rjust(4), click.style(entry.entry_dn, fg=title_fg, bg=title_bg, bold=title_bold))
     for attribute in sorted(entry.entry_attributes):
         echo_detail(attribute, entry[attribute], level=5)
+
 
 def syntax_description(syntax):
     if not syntax:
@@ -113,8 +114,22 @@ class Session(object):
         self.password = password
         self.server = None
         self.connection = None
-        self.authentication = authentication
-        self.info = get_info
+        if authentication == 'anonymous':
+            self.authentication = ANONYMOUS
+        elif authentication == 'simple':
+            self.authentication = SIMPLE
+        elif authentication == 'sasl':
+            self.authentication = SASL
+        else:
+            self.authentication = NTLM
+        if get_info == 'none':
+            self.info = NONE
+        elif get_info == 'dsa':
+            self.info = DSA
+        elif get_info == 'schema':
+            self.info = SCHEMA
+        else:
+            self.info = ALL
         self.usage = usage
         self.debug = debug
         self.server = Server(self.host, self.port, self.use_ssl, get_info=self.info)
@@ -181,14 +196,14 @@ class Session(object):
             self.login_result = self.connection.last_error
 
 @click.group()
-@click.option('-a', '--authentication', type=click.Choice(['ANONYMOUS', 'SIMPLE', 'SASL', 'NTLM']), help='type of authentication')
+@click.option('-a', '--authentication', type=click.Choice(['anonymous', 'simple', 'sasl', 'ntlm']), help='type of authentication')
 @click.option('-h', '--host', default='localhost', help='LDAP server hostname or ip address')
 @click.option('-p', '--port', type=click.IntRange(0, 65535), help='LDAP server port')
 @click.option('-u', '--user', help='dn or user name')
 @click.option('-w', '--password', help='password')
 @click.option('-W', '--request-password', is_flag=True, help='hidden prompt for password at runtime')
 @click.option('-s', '--ssl', is_flag=True, help='establish a SSL/TLS connection')
-@click.option('-i', '--server_info', type=click.Choice(['NONE', 'DSA', 'SCHEMA', 'ALL']), default='ALL', help='info requested to server')
+@click.option('-i', '--server_info', type=click.Choice(['none', 'dsa', 'schema', 'all']), default='all', help='info requested to server')
 @click.option('-m', '--metrics', is_flag=True, help='display usage metrics')
 @click.option('-d', '--debug', is_flag=True, help='enable debug output')
 @click.pass_context
@@ -448,22 +463,41 @@ def info(session, type, json, sort, max_width):
 @cli.command()
 @click.pass_obj
 @click.option('-s', '--scope', type=click.Choice(['base', 'level', 'subtree']), default='subtree', help='scope of search')
+@click.option('-j', '--json', is_flag=True, help='format output as JSON')
+@click.option('-l', '--ldif', is_flag=True, help='format output as LDIF')
 @click.argument('base', type=click.STRING)
 @click.argument('filter', required=False, default='(objectclass=*)')
 @click.argument('attrs', nargs=-1, type=click.STRING)
-def search(session, base, filter, attrs, scope):
+def search(session, base, filter, attrs, scope, json, ldif):
     """Search and return entries"""
     session.connect()
     if session.valid:
-        scope = scope.upper()
+        if scope == 'base':
+            search_scope = BASE
+        elif scope == 'level':
+            search_scope = LEVEL
+        else:
+            search_scope = SUBTREE
+
+        # check if an attribute is stored in the filter parameter. If so apply the default filter
+        if filter.startswith('(') and filter.endswith(')') and '=' in filter:
+            search_filter = filter
+        else:
+            search_filter = '(objectclass=*)'
+            attrs = attrs + (filter, )
         try:
-            session.connection.search(base, filter, scope, attributes=attrs)
+            session.connection.search(base, search_filter, search_scope, attributes=attrs)
         except LDAPInvalidFilterError:
             raise click.ClickException('invalid filter: %s' % filter)
         echo_title('Response')
         if len(session.connection.entries) != 0:
             for i, e in enumerate(session.connection.entries, 1):
-                display_entry(i, e)
+                if json:
+                    click.echo(e.entry_to_json())
+                elif ldif:
+                    click.echo(e.entry_to_ldif())
+                else:
+                    display_entry(i, e)
             echo_detail('Total entries', len(session.connection.entries))
         else:
             echo_detail('', 'No entries found', error=True)
