@@ -269,11 +269,33 @@ def info(session, type, json, sort, max_width):
                     if session.connection.server.info.naming_contexts:
                         echo_detail('Naming contexts', ' - '.join(sorted(session.connection.server.info.naming_contexts)) if isinstance(session.connection.server.info.naming_contexts, SEQUENCE_TYPES) else session.connection.server.info.naming_contexts)
                     if session.connection.server.info.supported_controls:
-                        echo_detail_multiline('Supported controls', [element[0] + (element[2] if element[2] else '') + (element[3] if element[3] else '') for element in session.connection.server.info.supported_controls])
+                        # echo_detail_multiline('Supported controls', [element[0] + (' - ' + element[2] if element[2] else '') + (' - ' + element[3] if element[3] else '') for element in session.connection.server.info.supported_controls])
+                        build_table('Supported controls',
+                                    ['name', 'OID', 'description'],
+                                    [[element[2] if element[2] else '',
+                                     element[0] if element[0] else'',
+                                     element[3] if element[3] else '']
+                                     for element in session.connection.server.info.supported_controls],
+                                    sort=sorting[sort],
+                                    max_width=max_width)
                     if session.connection.server.info.supported_extensions:
-                        echo_detail_multiline('Supported extensions', [element[0] + (element[2] if element[2] else '') + (element[3] if element[3] else '') for element in session.connection.server.info.supported_extensions])
+                        build_table('Supported extensions',
+                                    ['name', 'OID', 'description'],
+                                    [[element[2] if element[2] else '',
+                                     element[0] if element[0] else'',
+                                     element[3] if element[3] else '']
+                                     for element in session.connection.server.info.supported_extensions],
+                                    sort=sorting[sort],
+                                    max_width=max_width)
                     if session.connection.server.info.supported_features:
-                        echo_detail_multiline('Supported features', [element[0] + (element[2] if element[2] else '') + (element[3] if element[3] else '') for element in session.connection.server.info.supported_features])
+                        build_table('Supported features',
+                                    ['name', 'OID', 'description'],
+                                    [[element[2] if element[2] else '',
+                                     element[0] if element[0] else'',
+                                     element[3] if element[3] else '']
+                                     for element in session.connection.server.info.supported_extensions],
+                                    sort=sorting[sort],
+                                    max_width=max_width)
                     if session.connection.server.info.schema_entry:
                         echo_detail('Schema entry', ' - '.join(session.connection.server.info.schema_entry) if isinstance(session.connection.server.info.schema_entry, SEQUENCE_TYPES) else session.connection.server.info.schema_entry)
                     if session.connection.server.info.other:
