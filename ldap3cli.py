@@ -29,6 +29,11 @@ def display_entry(counter, entry):
         echo_detail(attribute, entry[attribute], level=5)
 
 
+def display_response(counter, response):
+    echo_detail(str(counter).rjust(4), click.style(response['dn'], fg=title_fg, bg=title_bg, bold=title_bold))
+    for attribute in sorted(response['attributes']):
+        echo_detail(attribute, response['attributes'][attribute], level=5)
+
 def syntax_description(syntax):
     if not syntax:
         return ''
@@ -465,10 +470,11 @@ def info(session, type, json, sort, max_width):
 @click.option('-s', '--scope', type=click.Choice(['base', 'level', 'subtree']), default='subtree', help='scope of search')
 @click.option('-j', '--json', is_flag=True, help='format output as JSON')
 @click.option('-l', '--ldif', is_flag=True, help='format output as LDIF')
+@click.option('-p', '--paged', type=int, help='paged search')
 @click.argument('base', type=click.STRING)
 @click.argument('filter', required=False, default='(objectclass=*)')
 @click.argument('attrs', nargs=-1, type=click.STRING)
-def search(session, base, filter, attrs, scope, json, ldif):
+def search(session, base, filter, attrs, scope, json, ldif, paged):
     """Search and return entries"""
     session.connect()
     if session.valid:
@@ -486,21 +492,26 @@ def search(session, base, filter, attrs, scope, json, ldif):
             search_filter = '(objectclass=*)'
             attrs = attrs + (filter, )
         try:
-            session.connection.search(base, search_filter, search_scope, attributes=attrs)
+            if not paged:
+                session.connection.search(base, search_filter, search_scope, attributes=attrs)
+                responses = session.connection.response
+            else:
+                responses = session.connection.extend.standard.paged_search(base, search_filter, search_scope, attributes=attrs, paged_size=paged, generator=True)
         except LDAPInvalidFilterError:
             raise click.ClickException('invalid filter: %s' % filter)
+
         echo_title('Response')
-        if len(session.connection.entries) != 0:
-            for i, e in enumerate(session.connection.entries, 1):
-                if json:
-                    click.echo(e.entry_to_json())
-                elif ldif:
-                    click.echo(e.entry_to_ldif())
-                else:
-                    display_entry(i, e)
-            echo_detail('Total entries', len(session.connection.entries))
-        else:
-            echo_detail('', 'No entries found', error=True)
+        tot = 0
+        for i, response in enumerate(responses, 1):
+            tot = i
+            if json:
+                click.echo(response.to_json())
+            elif ldif:
+                click.echo(response.to_ldif())
+            else:
+                display_response(i, response)
+        if not json and not ldif:
+            echo_detail('Total entries', tot)
         session.done()
     else:
         echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)

@@ -1,6 +1,15 @@
 # changes file for ldap3cli
-# generated on 2017-04-03 00:18:42.771020
-# version 0.0.1a1
+# generated on 2017-05-03 07:35:07.373060
+# version 0.0.3
 
-- 0.0.1a not yet released
-    setting dev environment
+- 0.0.1a1 not released
+    - defined dev environment structure
+    - defined global parameters
+
+- 0.0.1 not released
+    - added info command
+    - added connect, server, schema subcommand for info
+
+- 0.0.2 not yet released
+    - added search command
+

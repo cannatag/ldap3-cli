@@ -1,11 +1,10 @@
-- 0.0.1a1 not released
-    - defined dev environment structure
-    - defined global parameters
+- 0.0.2 not yet released
+    - added search command
 
 - 0.0.1 not released
     - added info command
     - added connect, server, schema subcommand for info
 
-- 0.0.2 not yet released
-    - added search command
-
+- 0.0.1a1 not released
+    - defined dev environment structure
+    - defined global parameters

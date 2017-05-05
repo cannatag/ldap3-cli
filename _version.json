@@ -6,6 +6,6 @@
     "url": "https://github.com/cannatag/ldap3-cli",
     "description": "Command line utility for accessing LDAP servers, based on ldap3",
     "author": "Giovanni Cannata",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "license": "LGPL v3"
 }
