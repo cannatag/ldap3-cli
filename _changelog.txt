@@ -1,4 +1,7 @@
-- 0.0.2 not yet released
+- 0.0.3 not yet released
+    - added paged search option
+
+- 0.0.2 not released
     - added search command
 
 - 0.0.1 not released
