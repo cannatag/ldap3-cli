@@ -23,6 +23,21 @@ sorting = {'name': 0,
            'oid': 1,
            'type': 2}
 
+INDENT = 2
+
+def apply_style(style, string):
+    if style == 'title':
+        return click.style(string, fg = title_fg, bg=title_bg, bold=title_bold)
+    elif style == 'desc':
+        return click.style(string, fg = desc_fg, bg=desc_bg, bold=desc_bold)
+    elif style == 'value':
+        return click.style(string, fg = value_fg, bg=value_bg, bold=value_bold)
+    elif style == 'error':
+        return click.style(string, fg = error_fg, bg=error_bg, bold=error_bold)
+    else:
+        return string
+
+
 def display_entry(counter, entry):
     echo_detail(str(counter).rjust(4), click.style(entry.entry_dn, fg=title_fg, bg=title_bg, bold=title_bold))
     for attribute in sorted(entry.entry_attributes):
@@ -33,6 +48,7 @@ def display_response(counter, response):
     echo_detail(str(counter).rjust(4), click.style(response['dn'], fg=title_fg, bg=title_bg, bold=title_bold))
     for attribute in sorted(response['attributes']):
         echo_detail(attribute, response['attributes'][attribute], level=5)
+
 
 def syntax_description(syntax):
     if not syntax:
@@ -59,36 +75,46 @@ def list_to_string(list_object):
     return r[:-2] if r else ''
 
 
-def ljust_style(str, length, fill=' '):
-    unstyled = click.unstyle(str)
+def ljust_style(string, col, styles, lengths, fill=' '):
+    length = lengths[col]
+    unstyled = click.unstyle(string)
+    if len(unstyled) == len(string): # not already styled
+        if styles:
+            string = apply_style(styles[col], string)
     if len(unstyled) < length:
-        return str + fill * (length - len(unstyled))
-    return str
+        return string + fill * (length - len(unstyled))
+
+    return string
 
 
-def build_table(name, heading, rows, sort, max_width):
+def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
     if rows:
         if max_width == 0:
             max_width = 99999
         lengths = dict()
-        for col, _ in enumerate(heading):
-            lengths[col] = max([len(click.unstyle(row[col])[:max_width]) for row in [heading] + rows])
-        table = [' | '.join([ljust_style(element, lengths[col]) for col, element in enumerate(heading)]),
-                 ' | '.join([''.ljust(lengths[col], '=') for col, element in enumerate(heading)])]
-        for row in sorted(rows, key=itemgetter(sort)):
-            table.append(' | '.join([ljust_style(element[:max_width], lengths[col]) for col, element in enumerate(row)]))
+        if heading:
+            for col, _ in enumerate(heading):
+                lengths[col] = max([len(click.unstyle(str(row[col]))[:max_width]) for row in [heading] + rows])
+            table = [' | '.join([ljust_style(str(element)[:max_width], lengths[col]) for col, element in enumerate(heading)]),
+                     ' | '.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
+        else:
+            for col, _ in enumerate(rows[0]):
+                lengths[col] = max([len(click.unstyle(str(row[col]))[:max_width]) for row in rows])
+            table = []
+        for row in sorted(rows, key=itemgetter(sort)) if sort else rows:
+            table.append(' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(row)]))
     else:
         table = ['']
-    echo_detail_multiline(name, table)
+    echo_title(name)
+    echo_detail_multiline('', table, level=level)
 
 
 def echo_title(string, level=0):
-    click.secho('  ' * level + string, fg=title_fg, bg=title_bg, bold=title_bold)
+    click.secho(' ' * INDENT * level + string, fg=title_fg, bg=title_bg, bold=title_bold)
 
 
 def echo_detail(desc, value, error=False, level=1):
-    if desc:
-        click.secho('  ' * level + desc + (': ' if not desc.isspace() else '  '), fg=desc_fg, bg=desc_bg, bold=desc_bold, nl=False)
+    click.secho(' ' * INDENT * level + desc + (': ' if desc.strip() else ''), fg=desc_fg, bg=desc_bg, bold=desc_bold, nl=False)
     if error:
         click.secho(str(value), fg=error_fg, bg=error_bg, bold=error_bold)
     else:
@@ -104,10 +130,10 @@ def echo_detail_multiline(desc, value, error=False, level=1):
     first = False
     for line in lines:
         if not first:
-            echo_detail(desc, line)
+            echo_detail(desc, line, level=level)
             first = True
         else:
-            echo_detail(' ' * len(desc), line)
+            echo_detail(' ' * len(desc), line, level=level)
 
 
 class Session(object):
@@ -226,47 +252,38 @@ def cli(ctx, host, port, user, password, ssl, request_password, authentication, 
 @cli.command()
 @click.pass_obj
 @click.option('-j', '--json', is_flag=True, help='format output as JSON')
-@click.option('-m', '--max-width', type=int, default=40, help='max column width')
+@click.option('-m', '--max-width', type=int, default=50, help='max column width')
 @click.option('-s', '--sort', type=click.Choice(['name', 'oid', 'type']), default='name', help='sorting column')
-@click.argument('type', type=click.Choice(['connect', 'server', 'schema', 'all']), default='connect')
+@click.argument('type', type=click.Choice(['connection', 'server', 'schema', 'all']), default='connection')
 def info(session, type, json, sort, max_width):
     """Bind and get info"""
     session.connect()
-    if type in ['connect', 'all']:
-        echo_title('Connection info')
+    if type in ['connection', 'all']:
         if session.valid:
-            echo_detail('Status', 'valid')
+            build_table('',
+                        [],
+                        [['Connection', 'Status', 'valid'],
+                         ['', 'Host', session.connection.server.host],
+                         ['', 'Port', session.connection.server.port],
+                         ['', 'Encryption', 'SSL' if session.use_ssl else apply_style('error', 'CLEARTEXT')],
+                         ['', 'User', session.connection.user],
+                         ['', 'Authentication', session.connection.authentication],
+                         ['', '', ''],
+                         ['Socket', 'Family', session.connection.socket.family],
+                         ['', 'Type', session.connection.socket.type],
+                         ['', 'Local', session.connection.socket.getsockname()],
+                         ['', 'Remote', session.connection.socket.getpeername()],
+                         ['', '', ''],
+                         ['TLS', 'Status', 'established' if session.connection.server.ssl else apply_style('error', 'NOT established')],
+                         ['', 'Version', session.connection.socket.version() if session.connection.server.ssl else '-'],
+                         ['', 'Cipher', session.connection.socket.cipher() if session.connection.server.ssl else '-'],
+                         ['Server info', 'Status', 'No info returned by server' if not session.connection.server.info else 'Present - use "info server" to show'],
+                         ['Schema info', 'Status', 'No schema returned by server' if not session.connection.server.schema else 'Present - use "info schema" to show']
+                         ],
+                        styles=['title', 'desc', 'value'],
+                        max_width=max_width)
         else:
             echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
-        echo_detail('Host', session.connection.server.host)
-        echo_detail('Port', session.connection.server.port)
-        echo_detail('Encryption', ' session is using SSL' if session.use_ssl else ' session is in CLEARTEXT')
-        echo_detail('User', session.connection.user)
-        echo_detail('Authentication', session.connection.authentication)
-        echo_title('Socket info')
-        echo_detail('Family', session.connection.socket.family)
-        echo_detail('Type', session.connection.socket.type)
-        echo_title('Endopoints', 1)
-        echo_detail('Local', session.connection.socket.getsockname(), level=2)
-        echo_detail('Remote', session.connection.socket.getpeername(), level=2)
-        echo_title('TLS info')
-        if session.connection.server.ssl:
-            echo_detail('TLS status', 'established')
-            echo_detail('TLS version', session.connection.socket.version())
-            echo_detail('TLS cipher', session.connection.socket.cipher())
-        else:
-            echo_detail('TLS status', 'NOT established', error=True)
-        echo_title('Server info')
-        if not session.connection.server.info:
-            echo_detail('Status', 'NO INFO returned by server', error=True)
-        else:
-            echo_detail('Status', 'INFO returned by server - use "info server" to show')
-        echo_title('Schema info')
-        if not session.connection.server.schema:
-            echo_detail('Status', 'NO SCHEMA returned by server', error=True)
-        else:
-            echo_detail('Status', 'SCHEMA returned by server - use "info schema" to show')
-
     if type in ['server', 'all']:
         if session.valid:
             if json:
