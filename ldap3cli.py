@@ -95,7 +95,7 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
         if heading:
             for col, _ in enumerate(heading):
                 lengths[col] = max([len(click.unstyle(str(row[col]))[:max_width]) for row in [heading] + rows])
-            table = [' | '.join([ljust_style(str(element)[:max_width], lengths[col]) for col, element in enumerate(heading)]),
+            table = [' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(heading)]),
                      ' | '.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
         else:
             for col, _ in enumerate(rows[0]):
@@ -105,8 +105,8 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
             table.append(' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(row)]))
     else:
         table = ['']
-    echo_title(name)
-    echo_detail_multiline('', table, level=level)
+    echo_title(name, level=level)
+    echo_detail_multiline('', table, level=level + 1)
 
 
 def echo_title(string, level=0):
@@ -262,23 +262,23 @@ def info(session, type, json, sort, max_width):
         if session.valid:
             build_table('',
                         [],
-                        [['Connection', 'Status', 'valid'],
+                        [['Connection ', 'Status', 'valid'],
                          ['', 'Host', session.connection.server.host],
                          ['', 'Port', session.connection.server.port],
-                         ['', 'Encryption', 'SSL' if session.use_ssl else apply_style('error', 'CLEARTEXT')],
+                         ['', 'Encryption' if session.use_ssl else apply_style('error', 'Encryption'), 'SSL' if session.use_ssl else 'CLEARTEXT'],
                          ['', 'User', session.connection.user],
                          ['', 'Authentication', session.connection.authentication],
                          ['', '', ''],
-                         ['Socket', 'Family', session.connection.socket.family],
+                         ['Socket     ', 'Family', session.connection.socket.family],
                          ['', 'Type', session.connection.socket.type],
-                         ['', 'Local', session.connection.socket.getsockname()],
-                         ['', 'Remote', session.connection.socket.getpeername()],
+                         ['', 'Local', ' - '.join([str(el) for el in session.connection.socket.getsockname()])],
+                         ['', 'Remote', ' - '.join([str(el) for el in session.connection.socket.getpeername()])],
                          ['', '', ''],
-                         ['TLS', 'Status', 'established' if session.connection.server.ssl else apply_style('error', 'NOT established')],
+                         ['TLS        ', 'Status' if session.connection.server.ssl else apply_style('error', 'Status'), 'established' if session.connection.server.ssl else 'NOT established'],
                          ['', 'Version', session.connection.socket.version() if session.connection.server.ssl else '-'],
-                         ['', 'Cipher', session.connection.socket.cipher() if session.connection.server.ssl else '-'],
-                         ['Server info', 'Status', 'No info returned by server' if not session.connection.server.info else 'Present - use "info server" to show'],
-                         ['Schema info', 'Status', 'No schema returned by server' if not session.connection.server.schema else 'Present - use "info schema" to show']
+                         ['', 'Cipher', ' - '.join([str(el) for el in session.connection.socket.cipher()]) if session.connection.server.ssl else '-'],
+                         ['Server info', 'Status' if session.connection.server.info else apply_style('error', 'Status'), 'No info returned by server' if not session.connection.server.info else 'Present - use "info server" to show'],
+                         ['Schema info', 'Status' if session.connection.server.schema else apply_style('error', 'Status'), 'No schema returned by server' if not session.connection.server.schema else 'Present - use "info schema" to show']
                          ],
                         styles=['title', 'desc', 'value'],
                         max_width=max_width)
@@ -294,9 +294,9 @@ def info(session, type, json, sort, max_width):
                     echo_detail('Status', 'NO INFO returned by server', error=True)
                 else:
                     if session.connection.server.info.supported_ldap_versions:
-                        echo_detail('Supported LDAP versions', ' - '.join(sorted(session.connection.server.info.supported_ldap_versions if isinstance(session.connection.server.info.supported_ldap_versions, SEQUENCE_TYPES) else session.connection.server.info.supported_ldap_versions)))
+                        echo_detail('LDAP versions', ' - '.join(sorted(session.connection.server.info.supported_ldap_versions if isinstance(session.connection.server.info.supported_ldap_versions, SEQUENCE_TYPES) else session.connection.server.info.supported_ldap_versions)))
                     if session.connection.server.info.supported_sasl_mechanisms:
-                        echo_detail('Supported SASL mechanisms', ' - '.join(sorted(session.connection.server.info.supported_sasl_mechanisms) if isinstance(session.connection.server.info.supported_sasl_mechanisms, SEQUENCE_TYPES) else session.connection.server.info.supported_sasl_mechanisms))
+                        echo_detail('SASL mechanisms', ' - '.join(sorted(session.connection.server.info.supported_sasl_mechanisms) if isinstance(session.connection.server.info.supported_sasl_mechanisms, SEQUENCE_TYPES) else session.connection.server.info.supported_sasl_mechanisms))
                     if session.connection.server.info.vendor_name:
                         echo_detail('Vendor name', ' - '.join(session.connection.server.info.vendor_name) if isinstance(session.connection.server.info.vendor_name, SEQUENCE_TYPES) else session.connection.server.info.vendor_name)
                     if session.connection.server.info.vendor_version:
@@ -307,32 +307,35 @@ def info(session, type, json, sort, max_width):
                         echo_detail('Naming contexts', ' - '.join(sorted(session.connection.server.info.naming_contexts)) if isinstance(session.connection.server.info.naming_contexts, SEQUENCE_TYPES) else session.connection.server.info.naming_contexts)
                     if session.connection.server.info.supported_controls:
                         # echo_detail_multiline('Supported controls', [element[0] + (' - ' + element[2] if element[2] else '') + (' - ' + element[3] if element[3] else '') for element in session.connection.server.info.supported_controls])
-                        build_table('Supported controls',
+                        build_table('Controls',
                                     ['name', 'OID', 'description'],
                                     [[element[2] if element[2] else '',
                                      element[0] if element[0] else'',
                                      element[3] if element[3] else '']
                                      for element in session.connection.server.info.supported_controls],
                                     sort=sorting[sort],
-                                    max_width=max_width)
+                                    max_width=max_width,
+                                    level=1)
                     if session.connection.server.info.supported_extensions:
-                        build_table('Supported extensions',
+                        build_table('Extensions',
                                     ['name', 'OID', 'description'],
                                     [[element[2] if element[2] else '',
                                      element[0] if element[0] else'',
                                      element[3] if element[3] else '']
                                      for element in session.connection.server.info.supported_extensions],
                                     sort=sorting[sort],
-                                    max_width=max_width)
+                                    max_width=max_width,
+                                    level=1)
                     if session.connection.server.info.supported_features:
-                        build_table('Supported features',
+                        build_table('Features',
                                     ['name', 'OID', 'description'],
                                     [[element[2] if element[2] else '',
                                      element[0] if element[0] else'',
                                      element[3] if element[3] else '']
                                      for element in session.connection.server.info.supported_extensions],
                                     sort=sorting[sort],
-                                    max_width=max_width)
+                                    max_width=max_width,
+                                    level=1)
                     if session.connection.server.info.schema_entry:
                         echo_detail('Schema entry', ' - '.join(session.connection.server.info.schema_entry) if isinstance(session.connection.server.info.schema_entry, SEQUENCE_TYPES) else session.connection.server.info.schema_entry)
                     if session.connection.server.info.other:
