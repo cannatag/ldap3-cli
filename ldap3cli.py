@@ -19,11 +19,13 @@ title_fg = 'yellow'
 title_bg = 'black'
 title_bold = True
 
-sorting = {'name': 1,
+sorting = {'category': 0,
+           'name': 1,
            'oid': 2,
            'type': 3}
 
 INDENT = 2
+
 
 def apply_style(style, string):
     if style == 'title':
@@ -108,6 +110,7 @@ def build_table_orig(name, heading, rows, styles=None, sort=None, max_width=50, 
     echo_title(name, level=level)
     echo_detail_multiline('', table, level=level + 1)
 
+
 def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
     if rows:
         if max_width == 0:
@@ -128,8 +131,9 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
                      ' | '.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
         else:
             table = []
-
-        for row in sorted(rows, key=itemgetter(sort)) if sort is not None else rows:
+        if sort and not isinstance(sort, SEQUENCE_TYPES):
+            sort = [sort]
+        for row in sorted(rows, key=lambda x: [x[i].lower() if hasattr(x[i], 'lower') else x[i] for i in sort]) if sort is not None else rows:
             table_row = []
             for col, element in enumerate(row):
                 if isinstance(element, SEQUENCE_TYPES):
@@ -155,6 +159,10 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
         echo_title(name, level=level)
     echo_detail_multiline('', table, level=level + 1)
 
+
+def echo_empty_line(number=1):
+    for num in range(number):
+        click.echo('', nl=True)
 
 def echo_title(string, level=0):
     click.secho(' ' * INDENT * level + string, fg=title_fg, bg=title_bg, bold=title_bold)
@@ -352,53 +360,48 @@ def info(session, type, json, sort, max_width):
                         table.append(['', 'Alternate servers', session.connection.server.info.alt_servers])
                     if session.connection.server.info.naming_contexts:
                         table.append(['', 'Naming contexts', session.connection.server.info.naming_contexts])
+                    if session.connection.server.info.schema_entry:
+                        table.append(['', 'Schema entry', session.connection.server.info.schema_entry])
+
                     build_table('',
                                 [],
                                 table,
                                 styles=['title', 'desc', 'value'],
                                 max_width=max_width,
                                 level=1)
-                    if session.connection.server.info.supported_controls:
-                        table = []
-                        for pos, element in enumerate(session.connection.server.info.supported_controls):
-                            table.append(['Controls', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
 
-                        build_table('',
-                                    ['category  ', 'name', 'OID', 'description'],
-                                    table,
-                                    sort=sorting[sort],
-                                    styles=['title', 'desc', 'value', 'value'],
-                                    max_width=max_width,
-                                    level=1)
-                    if session.connection.server.info.supported_extensions:
-                        table = []
-                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
-                            table.append(['Extensions', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
-                        build_table('',
-                                    ['category  ', 'name', 'OID', 'description'],
-                                    table,
-                                    sort=sorting[sort],
-                                    styles=['title', 'desc', 'value', 'value'],
-                                    max_width=max_width,
-                                    level=1)
-                    if session.connection.server.info.supported_features:
-                        table = []
-                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
-                            table.append(['Features', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
-                        build_table('',
-                                    ['category  ', 'name', 'OID', 'description'],
-                                    table,
-                                    sort=sorting[sort],
-                                    styles=['title', 'desc', 'value', 'value'],
-                                    max_width=max_width,
-                                    level=1)
-
-                    if session.connection.server.info.schema_entry:
-                        echo_detail('Schema entry', ' - '.join(session.connection.server.info.schema_entry) if isinstance(session.connection.server.info.schema_entry, SEQUENCE_TYPES) else session.connection.server.info.schema_entry)
                     if session.connection.server.info.other:
-                        echo_title('Other info')
-                        for key, value in session.connection.server.info.other.items():
-                            echo_detail(key, ' - '.join(value) if isinstance(value, SEQUENCE_TYPES) else value)
+                        echo_empty_line()
+                        table = []
+                        for i, (key, value) in enumerate(sorted(session.connection.server.info.other.items())):
+                            table.append(['Other' if i == 0 else '', key, value])
+                        build_table('',
+                                    [],
+                                    table,
+                                    styles=['title', 'desc', 'value'],
+                                    max_width=max_width,
+                                    level=1)
+
+                    table = []
+                    if session.connection.server.info.supported_controls:
+                        for pos, element in enumerate(session.connection.server.info.supported_controls):
+                            table.append(['Control', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
+                    if session.connection.server.info.supported_extensions:
+                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
+                            table.append(['Extension', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
+                    if session.connection.server.info.supported_features:
+                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
+                            table.append(['Feature', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
+                    if table:
+                        echo_empty_line()
+                        build_table('',
+                                    ['category', 'name', 'OID', 'description'],
+                                    table,
+                                    sort=(sorting['category'], sorting[sort]),
+                                    styles=['title', 'desc', 'value', 'value'],
+                                    max_width=max_width,
+                                    level=1)
+
         elif type != 'all':
             echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
 
