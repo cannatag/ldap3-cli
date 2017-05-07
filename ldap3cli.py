@@ -89,29 +89,7 @@ def ljust_style(string, col, styles, lengths, fill=' '):
     return string
 
 
-def build_table_orig(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
-    if rows:
-        if max_width == 0:
-            max_width = 99999
-        lengths = dict()
-        if heading:
-            for col, _ in enumerate(heading):
-                lengths[col] = max([len(click.unstyle(str(row[col]))[:max_width]) for row in [heading] + rows])
-            table = [' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(heading)]),
-                     ' | '.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
-        else:
-            for col, _ in enumerate(rows[0]):
-                lengths[col] = max([len(click.unstyle(str(row[col]))[:max_width]) for row in rows])
-            table = []
-        for row in sorted(rows, key=itemgetter(sort)) if sort else rows:
-            table.append(' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(row)]))
-    else:
-        table = ['']
-    echo_title(name, level=level)
-    echo_detail_multiline('', table, level=level + 1)
-
-
-def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
+def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=0):
     if rows:
         if max_width == 0:
             max_width = 99999
@@ -157,7 +135,7 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
         table = ['']
     if name:
         echo_title(name, level=level)
-    echo_detail_multiline('', table, level=level + 1)
+    echo_detail_multiline('', table, level=level + (1 if name else 0))
 
 
 def echo_empty_line(number=1):
@@ -229,42 +207,40 @@ class Session(object):
     def done(self):
         self.connection.unbind()
         if self.usage:
-            echo_title('Connection metrics')
-            # echo_detail('', self.connection.usage)
-            echo_title('Time', level=1)
-            echo_detail('Total', self.connection.usage.elapsed_time, level=2)
-            echo_detail('Socket open at', (str(self.connection.usage.open_socket_start_time.isoformat()) if self.connection.usage.open_socket_start_time else ''), level=2)
-            echo_detail('Socket closed at', (str(self.connection.usage.connection_stop_time.isoformat()) if self.connection.usage.connection_stop_time else ''), level=2)
-            echo_title('Server', level=1)
-            echo_detail('From pool', self.connection.usage.servers_from_pool, level=2)
-            echo_detail('Sockets open', self.connection.usage.open_sockets, level=2)
-            echo_detail('Sockets closed', self.connection.usage.closed_sockets, level=2)
-            echo_detail('TLS sockets', self.connection.usage.wrapped_sockets, level=2)
-            echo_title('Bytes', level=1)
-            echo_detail('Total', self.connection.usage.bytes_transmitted + self.connection.usage.bytes_received, level=2)
-            echo_detail('Transmitted', self.connection.usage.bytes_transmitted, level=2)
-            echo_detail('Received', self.connection.usage.bytes_received, level=2)
-            echo_title('LDAP messages', level=1)
-            echo_detail('Total', self.connection.usage.messages_transmitted + self.connection.usage.messages_received, level=2)
-            echo_detail('Transmitted', self.connection.usage.messages_transmitted, level=2)
-            echo_detail('Received', self.connection.usage.messages_received, level=2)
-            echo_title('LDAP operations', level=1)
-            echo_detail('Total', self.connection.usage.operations, level=2)
-            echo_detail('Abandon', self.connection.usage.abandon_operations, level=2)
-            echo_detail('Bind', self.connection.usage.bind_operations, level=2)
-            echo_detail('Add', self.connection.usage.add_operations, level=2)
-            echo_detail('Compare', self.connection.usage.compare_operations, level=2)
-            echo_detail('Delete', self.connection.usage.delete_operations, level=2)
-            echo_detail('Extended', self.connection.usage.extended_operations, level=2)
-            echo_detail('Modify', self.connection.usage.modify_operations, level=2)
-            echo_detail('Modify DN', self.connection.usage.modify_dn_operations, level=2)
-            echo_detail('Search', self.connection.usage.search_operations, level=2)
-            echo_detail('Unbind', self.connection.usage.unbind_operations, level=2)
-            echo_title('Referrals', level=1)
-            echo_detail('Received', self.connection.usage.referrals_received, level=2)
-            echo_detail('Followed', self.connection.usage.referrals_followed, level=2)
-            echo_detail('Connections', self.connection.usage.referrals_connections, level=2)
-
+            echo_empty_line()
+            table = []
+            table.append(['Time', 'Total', self.connection.usage.elapsed_time])
+            table.append(['', 'Socket open at', str(self.connection.usage.open_socket_start_time.isoformat()) if self.connection.usage.open_socket_start_time else ''])
+            table.append(['', 'Socket closed at', str(self.connection.usage.connection_stop_time.isoformat()) if self.connection.usage.connection_stop_time else ''])
+            table.append(['Server', 'From pool', self.connection.usage.servers_from_pool])
+            table.append(['', 'Sockets open', self.connection.usage.open_sockets])
+            table.append(['', 'Sockets closed', self.connection.usage.closed_sockets])
+            table.append(['', 'TLS sockets', self.connection.usage.wrapped_sockets])
+            table.append(['Bytes', 'Total', self.connection.usage.bytes_transmitted + self.connection.usage.bytes_received])
+            table.append(['', 'Transmitted', self.connection.usage.bytes_transmitted])
+            table.append(['', 'Received', self.connection.usage.bytes_received])
+            table.append(['Messages', 'Total', self.connection.usage.messages_transmitted + self.connection.usage.messages_received])
+            table.append(['', 'Transmitted', self.connection.usage.messages_transmitted])
+            table.append(['', 'Received', self.connection.usage.messages_received])
+            table.append(['Operations', 'Total', self.connection.usage.operations])
+            table.append(['', 'Abandon', self.connection.usage.abandon_operations])
+            table.append(['', 'Bind', self.connection.usage.bind_operations])
+            table.append(['', 'Add', self.connection.usage.add_operations])
+            table.append(['', 'Compare', self.connection.usage.compare_operations])
+            table.append(['', 'Delete', self.connection.usage.delete_operations])
+            table.append(['', 'Extended', self.connection.usage.extended_operations])
+            table.append(['', 'Modify', self.connection.usage.modify_operations])
+            table.append(['', 'Modify DN', self.connection.usage.modify_dn_operations])
+            table.append(['', 'Search', self.connection.usage.search_operations])
+            table.append(['', 'Unbind', self.connection.usage.unbind_operations])
+            table.append(['Referrals', 'Received', self.connection.usage.referrals_received])
+            table.append(['', 'Followed', self.connection.usage.referrals_followed])
+            table.append(['', 'Connections', self.connection.usage.referrals_connections])
+            build_table('Session metrics',
+                        [],
+                        table,
+                        styles=['title', 'desc', 'value'],
+                        level=0)
     def connect(self):
         if self.connection and not self.connection.bound:
             try:
@@ -349,7 +325,7 @@ def info(session, type, json, sort, max_width):
                 else:
                     table = []
                     if session.connection.server.info.supported_ldap_versions:
-                        table.append(['Server', 'LDAP versions', session.connection.server.info.supported_ldap_versions])
+                        table.append(['Standard', 'LDAP versions', session.connection.server.info.supported_ldap_versions])
                     if session.connection.server.info.supported_sasl_mechanisms:
                         table.append(['', 'SASL mechanisms', session.connection.server.info.supported_sasl_mechanisms])
                     if session.connection.server.info.vendor_name:
@@ -363,18 +339,18 @@ def info(session, type, json, sort, max_width):
                     if session.connection.server.info.schema_entry:
                         table.append(['', 'Schema entry', session.connection.server.info.schema_entry])
 
-                    build_table('',
+                    build_table('Server (DSA) info',
                                 [],
                                 table,
                                 styles=['title', 'desc', 'value'],
                                 max_width=max_width,
-                                level=1)
+                                level=0)
 
                     if session.connection.server.info.other:
                         echo_empty_line()
                         table = []
                         for i, (key, value) in enumerate(sorted(session.connection.server.info.other.items())):
-                            table.append(['Other' if i == 0 else '', key, value])
+                            table.append(['Custom  ' if i == 0 else '', key, value])
                         build_table('',
                                     [],
                                     table,
@@ -390,17 +366,17 @@ def info(session, type, json, sort, max_width):
                         for pos, element in enumerate(session.connection.server.info.supported_extensions):
                             table.append(['Extension', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
                     if session.connection.server.info.supported_features:
-                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
+                        for pos, element in enumerate(session.connection.server.info.supported_features):
                             table.append(['Feature', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
                     if table:
                         echo_empty_line()
-                        build_table('',
+                        build_table('Capabilities',
                                     ['category', 'name', 'OID', 'description'],
                                     table,
                                     sort=(sorting['category'], sorting[sort]),
                                     styles=['title', 'desc', 'value', 'value'],
                                     max_width=max_width,
-                                    level=1)
+                                    level=0)
 
         elif type != 'all':
             echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
@@ -410,10 +386,10 @@ def info(session, type, json, sort, max_width):
             if json:
                 echo_detail_multiline('', session.connection.server.schema.to_json())
             else:
-                echo_title('Schema info')
                 if not session.connection.server.schema:
                     echo_detail('Status', 'NO SCHEMA returned by server', error=True)
                 else:
+                    echo_title('Schema info')
                     if session.connection.server.schema.object_classes:
                         build_table('Object classes',
                                     ['name', 'OID', 'type (kind)', 'obsolete', 'description'],
@@ -423,12 +399,14 @@ def info(session, type, json, sort, max_width):
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.object_classes.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('Object classes', 'not present')
 
                     if session.connection.server.schema.attribute_types:
+                        echo_empty_line()
                         build_table('Attribute types',
                                     ['name', 'OID', 'type (syntax)', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
@@ -437,6 +415,7 @@ def info(session, type, json, sort, max_width):
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.attribute_types.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
 
@@ -444,6 +423,7 @@ def info(session, type, json, sort, max_width):
                         echo_detail('Attribute types', 'not present')
 
                     if session.connection.server.schema.matching_rules:
+                        echo_empty_line()
                         build_table('Matching rules',
                                     ['name', 'OID', 'type (syntax)', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
@@ -451,13 +431,15 @@ def info(session, type, json, sort, max_width):
                                       list_to_string(element[1].syntax),
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
-                        for element in session.connection.server.schema.matching_rules.items()],
+                                    for element in session.connection.server.schema.matching_rules.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('Matching rules', 'not present')
 
                     if session.connection.server.schema.matching_rule_uses:
+                        echo_empty_line()
                         build_table('Matching rule uses',
                                     ['name', 'OID', 'type (apply to)', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
@@ -466,12 +448,14 @@ def info(session, type, json, sort, max_width):
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.matching_rule_uses.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('Matching rule uses', 'not present')
 
                     if session.connection.server.schema.dit_content_rules:
+                        echo_empty_line()
                         build_table('DIT content rules',
                                     ['name', 'OID', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
@@ -479,12 +463,14 @@ def info(session, type, json, sort, max_width):
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.dit_content_rules.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('DIT content rules', 'not present')
 
                     if session.connection.server.schema.dit_structure_rules:
+                        echo_empty_line()
                         build_table('DIT structure rules',
                                     ['name', 'OID', 'type (name form)', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
@@ -493,12 +479,14 @@ def info(session, type, json, sort, max_width):
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.dit_structure_rules.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('DIT structure rules', 'not present')
 
                     if session.connection.server.schema.name_forms:
+                        echo_empty_line()
                         build_table('Name forms',
                                     ['name', 'OID', 'type (object class)', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
@@ -507,12 +495,14 @@ def info(session, type, json, sort, max_width):
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.name_forms.items()],
+                                    styles=['desc', 'value', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('Name forms', 'not present')
 
                     if session.connection.server.schema.ldap_syntaxes:
+                        echo_empty_line()
                         temp_table = [[element[1].oid_info[2] if element[1].oid_info else element[1].oid,
                                       element[1].oid,
                                       click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
@@ -529,15 +519,23 @@ def info(session, type, json, sort, max_width):
                         build_table('LDAP syntaxes',
                                     ['name', 'OID', 'obsolete', 'description'],
                                     temp_table,
+                                    styles=['desc', 'value', 'error', 'title'],
                                     sort=sorting[sort],
                                     max_width=max_width)
                     else:
                         echo_detail('LDAP syntaxes', 'not present')
 
                     if session.connection.server.schema.other:
-                        echo_detail('Other info', '')
-                        for key, value in session.connection.server.schema.other.items():
-                            echo_detail(key, ' - '.join([str(val) for val in value]) if isinstance(value, SEQUENCE_TYPES) else str(value), level=2)
+                        echo_empty_line()
+                        table = []
+                        for i, (key, value) in enumerate(sorted(session.connection.server.schema.other.items())):
+                            table.append(['Other' if i == 0 else '', key, value])
+                        build_table('',
+                                    [],
+                                    table,
+                                    styles=['title', 'desc', 'value'],
+                                    max_width=max_width,
+                                    level=0)
         elif type != 'all':
             echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
 
