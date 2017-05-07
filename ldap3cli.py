@@ -49,7 +49,7 @@ def display_entry(counter, entry):
 def display_response(counter, response):
     echo_detail(str(counter).rjust(4), click.style(response['dn'], fg=title_fg, bg=title_bg, bold=title_bold))
     for attribute in sorted(response['attributes']):
-        echo_detail(attribute, response['attributes'][attribute], level=5)
+        echo_detail(' ' * 7 + attribute, response['attributes'][attribute], level=0)
 
 
 def syntax_description(syntax):
@@ -78,6 +78,8 @@ def list_to_string(list_object):
 
 
 def ljust_style(string, col, styles, lengths, fill=' '):
+    if not string:
+        string = ''
     length = lengths[col]
     unstyled = click.unstyle(string)
     if len(unstyled) == len(string): # not already styled
@@ -99,6 +101,7 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
             lengths[col] = 0
             for row in [heading] + rows:
                 if row:
+                    # print(col, row)
                     if isinstance(row[col], SEQUENCE_TYPES):
                         for el in row[col]:
                             lengths[col] = max(len(click.unstyle(str(el))[:max_width]), lengths[col])
@@ -113,21 +116,30 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
             sort = [sort]
         for row in sorted(rows, key=lambda x: [x[i].lower() if hasattr(x[i], 'lower') else x[i] for i in sort]) if sort is not None else rows:
             table_row = []
+            print(row)
             for col, element in enumerate(row):
+                if col == 2:
+                    print(col, element)
                 if isinstance(element, SEQUENCE_TYPES):
-                    for pos, el in enumerate(sorted(element)):
-                        if pos == 0:
-                            table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
-                        else:
-                            for remaining in range(col, max_cols - 1):
-                                table_row.append('')
-                            table.append(' | '.join(table_row))
-                            table_row = []
-                            for starting in range(0, col):
-                                table_row.append(ljust_style('', starting, styles, lengths))
-                            table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
+                    if element:
+                        for pos, el in enumerate(sorted(element)):
+                            print(col, element, pos, el)
 
+                            if pos == 0:
+                                table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
+                            else:
+                                for remaining in range(col, max_cols - 1):
+                                    table_row.append('')
+                                table.append(' | '.join(table_row))
+                                table_row = []
+                                for starting in range(0, col):
+                                    table_row.append(ljust_style('', starting, styles, lengths))
+                                table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
+                    else:
+                        table_row.append(ljust_style('', col, styles, lengths))
                 else:
+                    print(col, element)
+
                     table_row.append(ljust_style(str(element)[:max_width], col, styles, lengths))
 
             table.append(' | '.join(table_row))
@@ -241,6 +253,7 @@ class Session(object):
                         table,
                         styles=['title', 'desc', 'value'],
                         level=0)
+
     def connect(self):
         if self.connection and not self.connection.bound:
             try:
@@ -547,11 +560,12 @@ def info(session, type, json, sort, max_width):
 @click.option('-s', '--scope', type=click.Choice(['base', 'level', 'subtree']), default='subtree', help='scope of search')
 @click.option('-j', '--json', is_flag=True, help='format output as JSON')
 @click.option('-l', '--ldif', is_flag=True, help='format output as LDIF')
+@click.option('-i', '--listing', is_flag=True, help='format output as list')
 @click.option('-p', '--paged', type=int, help='paged search')
 @click.argument('base', type=click.STRING)
 @click.argument('filter', required=False, default='(objectclass=*)')
 @click.argument('attrs', nargs=-1, type=click.STRING)
-def search(session, base, filter, attrs, scope, json, ldif, paged):
+def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
     """Search and return entries"""
     session.connect()
     if session.valid:
@@ -577,16 +591,29 @@ def search(session, base, filter, attrs, scope, json, ldif, paged):
         except LDAPInvalidFilterError:
             raise click.ClickException('invalid filter: %s' % filter)
 
-        echo_title('Response')
         tot = 0
-        for i, response in enumerate(responses, 1):
-            tot = i
-            if json:
-                click.echo(response.to_json())
-            elif ldif:
-                click.echo(response.to_ldif())
-            else:
-                display_response(i, response)
+        table = []
+        headers = ('item', 'DN') + attrs
+
+        if json:
+            click.echo(session.connection.response_to_json())
+        elif ldif:
+            click.echo(session.connection.response_to_ldif())
+        else:
+            for i, response in enumerate(responses, 1):
+                tot = i
+                if listing:
+                    display_response(i, response)
+                else:
+                    # table.append([i, response['dn'], response['attributes']])
+                    table.append([i, response['dn']] + [response['attributes'][attr] for attr in attrs])
+
+            if not listing:
+                build_table('Response',
+                            headers,
+                            table,
+                            level=0)
+
         if not json and not ldif:
             echo_detail('Total entries', tot)
         session.done()
