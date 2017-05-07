@@ -19,9 +19,9 @@ title_fg = 'yellow'
 title_bg = 'black'
 title_bold = True
 
-sorting = {'name': 0,
-           'oid': 1,
-           'type': 2}
+sorting = {'name': 1,
+           'oid': 2,
+           'type': 3}
 
 INDENT = 2
 
@@ -87,7 +87,7 @@ def ljust_style(string, col, styles, lengths, fill=' '):
     return string
 
 
-def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
+def build_table_orig(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
     if rows:
         if max_width == 0:
             max_width = 99999
@@ -106,6 +106,53 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
     else:
         table = ['']
     echo_title(name, level=level)
+    echo_detail_multiline('', table, level=level + 1)
+
+def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=1):
+    if rows:
+        if max_width == 0:
+            max_width = 99999
+        lengths = dict()
+        max_cols = max(len(heading), len(rows[0]))
+        for col in range(max_cols):
+            lengths[col] = 0
+            for row in [heading] + rows:
+                if row:
+                    if isinstance(row[col], SEQUENCE_TYPES):
+                        for el in row[col]:
+                            lengths[col] = max(len(click.unstyle(str(el))[:max_width]), lengths[col])
+                    else:
+                        lengths[col] = max(len(click.unstyle(str(row[col]))[:max_width]), lengths[col])
+        if heading:
+            table = [' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(heading)]),
+                     ' | '.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
+        else:
+            table = []
+
+        for row in sorted(rows, key=itemgetter(sort)) if sort is not None else rows:
+            table_row = []
+            for col, element in enumerate(row):
+                if isinstance(element, SEQUENCE_TYPES):
+                    for pos, el in enumerate(sorted(element)):
+                        if pos == 0:
+                            table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
+                        else:
+                            for remaining in range(col, max_cols - 1):
+                                table_row.append('')
+                            table.append(' | '.join(table_row))
+                            table_row = []
+                            for starting in range(0, col):
+                                table_row.append(ljust_style('', starting, styles, lengths))
+                            table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
+
+                else:
+                    table_row.append(ljust_style(str(element)[:max_width], col, styles, lengths))
+
+            table.append(' | '.join(table_row))
+    else:
+        table = ['']
+    if name:
+        echo_title(name, level=level)
     echo_detail_multiline('', table, level=level + 1)
 
 
@@ -289,53 +336,63 @@ def info(session, type, json, sort, max_width):
             if json:
                 echo_detail_multiline('', session.connection.server.info.to_json())
             else:
-                echo_title('Server info')
                 if not session.connection.server.info:
                     echo_detail('Status', 'NO INFO returned by server', error=True)
                 else:
+                    table = []
                     if session.connection.server.info.supported_ldap_versions:
-                        echo_detail('LDAP versions', ' - '.join(sorted(session.connection.server.info.supported_ldap_versions if isinstance(session.connection.server.info.supported_ldap_versions, SEQUENCE_TYPES) else session.connection.server.info.supported_ldap_versions)))
+                        table.append(['Server', 'LDAP versions', session.connection.server.info.supported_ldap_versions])
                     if session.connection.server.info.supported_sasl_mechanisms:
-                        echo_detail('SASL mechanisms', ' - '.join(sorted(session.connection.server.info.supported_sasl_mechanisms) if isinstance(session.connection.server.info.supported_sasl_mechanisms, SEQUENCE_TYPES) else session.connection.server.info.supported_sasl_mechanisms))
+                        table.append(['', 'SASL mechanisms', session.connection.server.info.supported_sasl_mechanisms])
                     if session.connection.server.info.vendor_name:
-                        echo_detail('Vendor name', ' - '.join(session.connection.server.info.vendor_name) if isinstance(session.connection.server.info.vendor_name, SEQUENCE_TYPES) else session.connection.server.info.vendor_name)
+                        table.append(['', 'Vendor name', session.connection.server.info.vendor_name])
                     if session.connection.server.info.vendor_version:
-                        echo_detail('Vendor version', ' - '.join(session.connection.server.info.vendor_version) if isinstance(session.connection.server.info.vendor_version, SEQUENCE_TYPES) else session.connection.server.info.vendor_version)
+                        table.append(['', 'Vendor version', session.connection.server.info.vendor_version])
                     if session.connection.server.info.alt_servers:
-                        echo_detail('Alternate servers', ' - '.join(sorted(session.connection.server.info.alt_servers)) if isinstance(session.connection.server.info.alt_servers, SEQUENCE_TYPES) else session.connection.server.info.alt_servers)
+                        table.append(['', 'Alternate servers', session.connection.server.info.alt_servers])
                     if session.connection.server.info.naming_contexts:
-                        echo_detail('Naming contexts', ' - '.join(sorted(session.connection.server.info.naming_contexts)) if isinstance(session.connection.server.info.naming_contexts, SEQUENCE_TYPES) else session.connection.server.info.naming_contexts)
+                        table.append(['', 'Naming contexts', session.connection.server.info.naming_contexts])
+                    build_table('',
+                                [],
+                                table,
+                                styles=['title', 'desc', 'value'],
+                                max_width=max_width,
+                                level=1)
                     if session.connection.server.info.supported_controls:
-                        # echo_detail_multiline('Supported controls', [element[0] + (' - ' + element[2] if element[2] else '') + (' - ' + element[3] if element[3] else '') for element in session.connection.server.info.supported_controls])
-                        build_table('Controls',
-                                    ['name', 'OID', 'description'],
-                                    [[element[2] if element[2] else '',
-                                     element[0] if element[0] else'',
-                                     element[3] if element[3] else '']
-                                     for element in session.connection.server.info.supported_controls],
+                        table = []
+                        for pos, element in enumerate(session.connection.server.info.supported_controls):
+                            table.append(['Controls', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
+
+                        build_table('',
+                                    ['category  ', 'name', 'OID', 'description'],
+                                    table,
                                     sort=sorting[sort],
+                                    styles=['title', 'desc', 'value', 'value'],
                                     max_width=max_width,
                                     level=1)
                     if session.connection.server.info.supported_extensions:
-                        build_table('Extensions',
-                                    ['name', 'OID', 'description'],
-                                    [[element[2] if element[2] else '',
-                                     element[0] if element[0] else'',
-                                     element[3] if element[3] else '']
-                                     for element in session.connection.server.info.supported_extensions],
+                        table = []
+                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
+                            table.append(['Extensions', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
+                        build_table('',
+                                    ['category  ', 'name', 'OID', 'description'],
+                                    table,
                                     sort=sorting[sort],
+                                    styles=['title', 'desc', 'value', 'value'],
                                     max_width=max_width,
                                     level=1)
                     if session.connection.server.info.supported_features:
-                        build_table('Features',
-                                    ['name', 'OID', 'description'],
-                                    [[element[2] if element[2] else '',
-                                     element[0] if element[0] else'',
-                                     element[3] if element[3] else '']
-                                     for element in session.connection.server.info.supported_extensions],
+                        table = []
+                        for pos, element in enumerate(session.connection.server.info.supported_extensions):
+                            table.append(['Features', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
+                        build_table('',
+                                    ['category  ', 'name', 'OID', 'description'],
+                                    table,
                                     sort=sorting[sort],
+                                    styles=['title', 'desc', 'value', 'value'],
                                     max_width=max_width,
                                     level=1)
+
                     if session.connection.server.info.schema_entry:
                         echo_detail('Schema entry', ' - '.join(session.connection.server.info.schema_entry) if isinstance(session.connection.server.info.schema_entry, SEQUENCE_TYPES) else session.connection.server.info.schema_entry)
                     if session.connection.server.info.other:
@@ -349,7 +406,6 @@ def info(session, type, json, sort, max_width):
         if session.valid:
             if json:
                 echo_detail_multiline('', session.connection.server.schema.to_json())
-                print(len(session.connection.server.schema.to_json()))
             else:
                 echo_title('Schema info')
                 if not session.connection.server.schema:
