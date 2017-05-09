@@ -25,7 +25,11 @@ sorting = {'category': 0,
            'type': 3}
 
 INDENT = 2
+H_SEPARATOR = ' | '
 
+def remove_tag(attribute):
+    attr, _ , _ = attribute.partition(';')
+    return attr
 
 def apply_style(style, string):
     if style == 'title':
@@ -84,7 +88,10 @@ def ljust_style(string, col, styles, lengths, fill=' '):
     unstyled = click.unstyle(string)
     if len(unstyled) == len(string): # not already styled
         if styles:
-            string = apply_style(styles[col], string)
+            if col >= len(styles):
+                string = apply_style(styles[:-1], string)  # apply last style for remaining fields
+            else:
+                string = apply_style(styles[col], string)
     if len(unstyled) < length:
         return string + fill * (length - len(unstyled))
 
@@ -101,48 +108,31 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
             lengths[col] = 0
             for row in [heading] + rows:
                 if row:
-                    # print(col, row)
                     if isinstance(row[col], SEQUENCE_TYPES):
                         for el in row[col]:
                             lengths[col] = max(len(click.unstyle(str(el))[:max_width]), lengths[col])
                     else:
                         lengths[col] = max(len(click.unstyle(str(row[col]))[:max_width]), lengths[col])
         if heading:
-            table = [' | '.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(heading)]),
-                     ' | '.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
+            table = [H_SEPARATOR.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(heading)]),
+                     H_SEPARATOR.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
         else:
             table = []
         if sort and not isinstance(sort, SEQUENCE_TYPES):
             sort = [sort]
+        subrows = []
         for row in sorted(rows, key=lambda x: [x[i].lower() if hasattr(x[i], 'lower') else x[i] for i in sort]) if sort is not None else rows:
-            table_row = []
-            print(row)
-            for col, element in enumerate(row):
-                if col == 2:
-                    print(col, element)
-                if isinstance(element, SEQUENCE_TYPES):
-                    if element:
-                        for pos, el in enumerate(sorted(element)):
-                            print(col, element, pos, el)
-
-                            if pos == 0:
-                                table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
-                            else:
-                                for remaining in range(col, max_cols - 1):
-                                    table_row.append('')
-                                table.append(' | '.join(table_row))
-                                table_row = []
-                                for starting in range(0, col):
-                                    table_row.append(ljust_style('', starting, styles, lengths))
-                                table_row.append(ljust_style(str(el)[:max_width], col, styles, lengths))
+            max_depth = max([len(element) if isinstance(element, SEQUENCE_TYPES) else 1 for element in row])
+            for depth in range(max_depth):
+                subrow = []
+                for col in range(max_cols):
+                    if isinstance(row[col], SEQUENCE_TYPES):
+                        subrow.append(ljust_style(str(row[col][depth])[:max_width], col, styles, lengths) if row[col] and len(row[col]) > depth else ljust_style('', col, styles, lengths))
+                    elif depth == 0:
+                        subrow.append(ljust_style(str(row[col])[:max_width], col, styles, lengths))
                     else:
-                        table_row.append(ljust_style('', col, styles, lengths))
-                else:
-                    print(col, element)
-
-                    table_row.append(ljust_style(str(element)[:max_width], col, styles, lengths))
-
-            table.append(' | '.join(table_row))
+                        subrow.append(ljust_style('', col, styles, lengths))
+                table.append(H_SEPARATOR.join(subrow))
     else:
         table = ['']
     if name:
@@ -153,6 +143,7 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
 def echo_empty_line(number=1):
     for num in range(number):
         click.echo('', nl=True)
+
 
 def echo_title(string, level=0):
     click.secho(' ' * INDENT * level + string, fg=title_fg, bg=title_bg, bold=title_bold)
@@ -581,20 +572,25 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
             search_filter = filter
         else:
             search_filter = '(objectclass=*)'
-            attrs = attrs + (filter, )
+            attrs = (filter, ) + attrs
         try:
             if not paged:
                 session.connection.search(base, search_filter, search_scope, attributes=attrs)
                 responses = session.connection.response
             else:
-                responses = session.connection.extend.standard.paged_search(base, search_filter, search_scope, attributes=attrs, paged_size=paged, generator=True)
+                responses = session.connection.extend.standard.paged_search(base, search_filter, search_scope, attributes=attrs, paged_size=paged, generator=False)
         except LDAPInvalidFilterError:
             raise click.ClickException('invalid filter: %s' % filter)
 
         tot = 0
         table = []
-        headers = ('item', 'DN') + attrs
+        returned_attrs = set([remove_tag(attr) for response in session.connection.response
+                                   for attr in response['attributes'].keys()])
 
+        if len(returned_attrs) == len(attrs) and '*' not in attrs and '+' not in attrs:  # keep original attrs sequence
+            returned_attrs = attrs
+
+        headers = ['#', 'DN'] + list(returned_attrs)
         if json:
             click.echo(session.connection.response_to_json())
         elif ldif:
@@ -605,13 +601,24 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
                 if listing:
                     display_response(i, response)
                 else:
-                    # table.append([i, response['dn'], response['attributes']])
-                    table.append([i, response['dn']] + [response['attributes'][attr] for attr in attrs])
+                    if i != 1:
+                        table.append(['', ''] + [''] * len(returned_attrs))
+                    attr_list = []
+                    for attr in returned_attrs:
+                        if attr in response['attributes']:
+                            if isinstance(response['attributes'][attr], SEQUENCE_TYPES):
+                                attr_list.append(sorted(response['attributes'][attr], key=lambda x: x.lower() if hasattr(x, 'lower') else x))
+                            else:
+                                attr_list.append(response['attributes'][attr])
+                        else:
+                            attr_list.append('')
+                    table.append([str(i).rjust(len(str(len(responses)))), response['dn']] + attr_list)
 
             if not listing:
                 build_table('Response',
                             headers,
                             table,
+                            styles=['title', 'desc', 'value'],
                             level=0)
 
         if not json and not ldif:

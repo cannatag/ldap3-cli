@@ -1,5 +1,6 @@
 - 0.0.3 not yet released
     - added paged search option
+    - added tabular output for search results
 
 - 0.0.2 not released
     - added search command
