@@ -1,5 +1,4 @@
 import socket
-from operator import itemgetter
 
 import click
 from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE, NONE, DSA, SCHEMA, ALL, STRING_TYPES, ANONYMOUS, SASL, NTLM, BASE, LEVEL, SUBTREE
@@ -19,17 +18,15 @@ title_fg = 'yellow'
 title_bg = 'black'
 title_bold = True
 
-sorting = {'category': 0,
-           'name': 1,
-           'oid': 2,
-           'type': 3}
-
 INDENT = 2
 H_SEPARATOR = ' | '
+MAX_COL_WIDTH = 80
 
-def remove_tag(attribute):
-    attr, _ , _ = attribute.partition(';')
-    return attr
+def sort_if_sequence(value):
+    if isinstance(value, SEQUENCE_TYPES):
+        return sorted(value, key=lambda x: x.lower() if hasattr(x, 'lower') else x)
+    return value
+
 
 def apply_style(style, string):
     if style == 'title':
@@ -46,13 +43,13 @@ def apply_style(style, string):
 
 def display_entry(counter, entry):
     echo_detail(str(counter).rjust(4), click.style(entry.entry_dn, fg=title_fg, bg=title_bg, bold=title_bold))
-    for attribute in sorted(entry.entry_attributes):
+    for attribute in sort_if_sequence(entry.entry_attributes):
         echo_detail(attribute, entry[attribute], level=5)
 
 
 def display_response(counter, response):
     echo_detail(str(counter).rjust(4), click.style(response['dn'], fg=title_fg, bg=title_bg, bold=title_bold))
-    for attribute in sorted(response['attributes']):
+    for attribute in sort_if_sequence(response['attributes']):
         echo_detail(' ' * 7 + attribute, response['attributes'][attribute], level=0)
 
 
@@ -98,7 +95,7 @@ def ljust_style(string, col, styles, lengths, fill=' '):
     return string
 
 
-def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level=0):
+def build_table(name, heading, rows, styles=None, sort=None, max_width=MAX_COL_WIDTH, level=0):
     if rows:
         if max_width == 0:
             max_width = 99999
@@ -121,7 +118,8 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=50, level
         if sort and not isinstance(sort, SEQUENCE_TYPES):
             sort = [sort]
         subrows = []
-        for row in sorted(rows, key=lambda x: [x[i].lower() if hasattr(x[i], 'lower') else x[i] for i in sort]) if sort is not None else rows:
+        sorted_rows = sorted(rows, key=lambda x: [x[i].lower() if hasattr(x[i], 'lower') else x[i] for i in sort]) if sort is not None else rows
+        for row in sorted_rows:
             max_depth = max([len(element) if isinstance(element, SEQUENCE_TYPES) else 1 for element in row])
             for depth in range(max_depth):
                 subrow = []
@@ -183,12 +181,12 @@ class Session(object):
         self.connection = None
         if authentication == 'anonymous':
             self.authentication = ANONYMOUS
-        elif authentication == 'simple':
-            self.authentication = SIMPLE
         elif authentication == 'sasl':
             self.authentication = SASL
-        else:
+        elif authentication == 'ntlm':
             self.authentication = NTLM
+        else:
+            self.authentication = SIMPLE
         if get_info == 'none':
             self.info = NONE
         elif get_info == 'dsa':
@@ -200,7 +198,7 @@ class Session(object):
         self.usage = usage
         self.debug = debug
         self.server = Server(self.host, self.port, self.use_ssl, get_info=self.info)
-        self.connection = Connection(self.server, self.user, self.password, authentication=authentication, raise_exceptions=False, collect_usage=self.usage)
+        self.connection = Connection(self.server, self.user, self.password, authentication=self.authentication, raise_exceptions=False, collect_usage=self.usage)
         self.login_result = None
 
     @property
@@ -293,6 +291,16 @@ def cli(ctx, host, port, user, password, ssl, request_password, authentication, 
 def info(session, type, json, sort, max_width):
     """Bind and get info"""
     session.connect()
+    if sort:
+        if sort == 'name':
+            sort_col = 1
+        elif sort == 'oid':
+            sort_col = 2
+        elif sort == 'type':
+            sort_col = 3
+        else:
+            sort_col = 0
+
     if type in ['connection', 'all']:
         if session.valid:
             build_table('',
@@ -329,38 +337,30 @@ def info(session, type, json, sort, max_width):
                 else:
                     table = []
                     if session.connection.server.info.supported_ldap_versions:
-                        table.append(['Standard', 'LDAP versions', session.connection.server.info.supported_ldap_versions])
+                        table.append(['Standard', 'LDAP versions', sort_if_sequence(session.connection.server.info.supported_ldap_versions)])
                     if session.connection.server.info.supported_sasl_mechanisms:
-                        table.append(['', 'SASL mechanisms', session.connection.server.info.supported_sasl_mechanisms])
+                        table.append(['', 'SASL mechanisms', sort_if_sequence(session.connection.server.info.supported_sasl_mechanisms)])
                     if session.connection.server.info.vendor_name:
-                        table.append(['', 'Vendor name', session.connection.server.info.vendor_name])
+                        table.append(['', 'Vendor name', sort_if_sequence(session.connection.server.info.vendor_name)])
                     if session.connection.server.info.vendor_version:
-                        table.append(['', 'Vendor version', session.connection.server.info.vendor_version])
+                        table.append(['', 'Vendor version', sort_if_sequence(session.connection.server.info.vendor_version)])
                     if session.connection.server.info.alt_servers:
-                        table.append(['', 'Alternate servers', session.connection.server.info.alt_servers])
+                        table.append(['', 'Alternate servers', sort_if_sequence(session.connection.server.info.alt_servers)])
                     if session.connection.server.info.naming_contexts:
-                        table.append(['', 'Naming contexts', session.connection.server.info.naming_contexts])
+                        table.append(['', 'Naming contexts', sort_if_sequence(session.connection.server.info.naming_contexts)])
                     if session.connection.server.info.schema_entry:
-                        table.append(['', 'Schema entry', session.connection.server.info.schema_entry])
-
+                        table.append(['', 'Schema entry', sort_if_sequence(session.connection.server.info.schema_entry)])
+                    if session.connection.server.info.other:
+                        table.append(['', '', ''])
+                        # table = []
+                        for i, key in enumerate(sort_if_sequence(session.connection.server.info.other.keys())):
+                            table.append(['Other' if i == 0 else '', key, session.connection.server.info.other[key]])
                     build_table('Server (DSA) info',
                                 [],
                                 table,
                                 styles=['title', 'desc', 'value'],
                                 max_width=max_width,
                                 level=0)
-
-                    if session.connection.server.info.other:
-                        echo_empty_line()
-                        table = []
-                        for i, (key, value) in enumerate(sorted(session.connection.server.info.other.items())):
-                            table.append(['Custom  ' if i == 0 else '', key, value])
-                        build_table('',
-                                    [],
-                                    table,
-                                    styles=['title', 'desc', 'value'],
-                                    max_width=max_width,
-                                    level=1)
 
                     table = []
                     if session.connection.server.info.supported_controls:
@@ -374,11 +374,11 @@ def info(session, type, json, sort, max_width):
                             table.append(['Feature', element[2] if element[2] else '', element[0] if element[0] else '', element[3] if element[3] else ''])
                     if table:
                         echo_empty_line()
-                        build_table('Capabilities',
-                                    ['category', 'name', 'OID', 'description'],
+                        build_table('Server capabilities',
+                                    ['type', 'name', 'OID', 'description'],
                                     table,
-                                    sort=(sorting['category'], sorting[sort]),
-                                    styles=['title', 'desc', 'value', 'value'],
+                                    sort=(0, sort_col),
+                                    styles=['title', 'desc', 'value'],
                                     max_width=max_width,
                                     level=0)
 
@@ -404,7 +404,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.object_classes.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('Object classes', 'not present')
@@ -420,7 +420,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.attribute_types.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
 
                     else:
@@ -437,7 +437,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                     for element in session.connection.server.schema.matching_rules.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('Matching rules', 'not present')
@@ -453,7 +453,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.matching_rule_uses.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('Matching rule uses', 'not present')
@@ -468,7 +468,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.dit_content_rules.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('DIT content rules', 'not present')
@@ -484,7 +484,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.dit_structure_rules.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('DIT structure rules', 'not present')
@@ -500,7 +500,7 @@ def info(session, type, json, sort, max_width):
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.name_forms.items()],
                                     styles=['desc', 'value', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('Name forms', 'not present')
@@ -524,7 +524,7 @@ def info(session, type, json, sort, max_width):
                                     ['name', 'OID', 'obsolete', 'description'],
                                     temp_table,
                                     styles=['desc', 'value', 'error', 'title'],
-                                    sort=sorting[sort],
+                                    sort=sort_col,
                                     max_width=max_width)
                     else:
                         echo_detail('LDAP syntaxes', 'not present')
@@ -532,13 +532,14 @@ def info(session, type, json, sort, max_width):
                     if session.connection.server.schema.other:
                         echo_empty_line()
                         table = []
-                        for i, (key, value) in enumerate(sorted(session.connection.server.schema.other.items())):
-                            table.append(['Other' if i == 0 else '', key, value])
+                        for i, key in enumerate(sort_if_sequence(list(session.connection.server.schema.other.keys()))):
+                            table.append(['Other' if i == 0 else '', key, session.connection.server.schema.other[key]])
                         build_table('',
                                     [],
                                     table,
                                     styles=['title', 'desc', 'value'],
                                     max_width=max_width,
+                                    sort=sort_col,
                                     level=0)
         elif type != 'all':
             echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
@@ -582,47 +583,67 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
         except LDAPInvalidFilterError:
             raise click.ClickException('invalid filter: %s' % filter)
 
-        tot = 0
-        table = []
-        returned_attrs = set([remove_tag(attr) for response in session.connection.response
-                                   for attr in response['attributes'].keys()])
+        if responses:
+            tot = 0
+            table = []
+            returned_attrs = set()
+            for response in responses:
+                if response['type'] == 'searchResEntry':
+                    for attr in response['attributes']:
+                        untagged_attr, _, _ = attr.partition(';')
+                        returned_attrs.add(untagged_attr)
 
-        if len(returned_attrs) == len(attrs) and '*' not in attrs and '+' not in attrs:  # keep original attrs sequence
-            returned_attrs = attrs
+            if len(returned_attrs) == len(attrs) and '*' not in attrs and '+' not in attrs:  # keep original attrs sequence
+                returned_attrs = attrs
 
-        headers = ['#', 'DN'] + list(returned_attrs)
-        if json:
-            click.echo(session.connection.response_to_json())
-        elif ldif:
-            click.echo(session.connection.response_to_ldif())
-        else:
-            for i, response in enumerate(responses, 1):
-                tot = i
-                if listing:
-                    display_response(i, response)
-                else:
-                    if i != 1:
-                        table.append(['', ''] + [''] * len(returned_attrs))
-                    attr_list = []
-                    for attr in returned_attrs:
-                        if attr in response['attributes']:
-                            if isinstance(response['attributes'][attr], SEQUENCE_TYPES):
-                                attr_list.append(sorted(response['attributes'][attr], key=lambda x: x.lower() if hasattr(x, 'lower') else x))
-                            else:
-                                attr_list.append(response['attributes'][attr])
+            headers = ['#', 'DN'] + list(returned_attrs)
+            other = []
+            if json:
+                click.echo(session.connection.response_to_json())
+            elif ldif:
+                click.echo(session.connection.response_to_ldif())
+            else:
+                for i, response in enumerate(responses, 1):
+                    if response['type'] == 'searchResEntry':
+                        tot = i
+                        if listing:
+                            display_response(i, response)
                         else:
-                            attr_list.append('')
-                    table.append([str(i).rjust(len(str(len(responses)))), response['dn']] + attr_list)
+                            if i != 1:
+                                table.append(['', ''] + [''] * len(returned_attrs))
+                            attr_list = []
+                            for attr in returned_attrs:
+                                if attr in response['attributes']:
+                                    if isinstance(response['attributes'][attr], SEQUENCE_TYPES):
+                                        attr_list.append(sort_if_sequence(response['attributes'][attr]))
+                                    else:
+                                        attr_list.append(response['attributes'][attr])
+                                else:
+                                    attr_list.append('')
+                            table.append([str(i).rjust(len(str(len(responses)))), response['dn']] + attr_list)
+                    else:
+                        other.append(response)
+                if not listing:
+                    build_table('Response',
+                                headers,
+                                table,
+                                styles=['title', 'desc', 'value'],
+                                level=0)
 
-            if not listing:
-                build_table('Response',
-                            headers,
-                            table,
-                            styles=['title', 'desc', 'value'],
-                            level=0)
-
-        if not json and not ldif:
             echo_detail('Total entries', tot)
+            if not json and not ldif:
+                if other:
+                    table = []
+                    for i, response in enumerate(other):
+                        table.append([str(i).rjust(len(str(len(responses)))), response.pop('type'), [key + ': ' + str(value) for key, value in response.items()]])
+                    build_table('Other',
+                                ['#', 'type', 'payload'],
+                                table,
+                                styles=['title', 'desc', 'value'],
+                                level=0)
+
+        else:
+            echo_detail('No entries found', error=True)
         session.done()
     else:
         echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)

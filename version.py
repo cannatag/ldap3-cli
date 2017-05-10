@@ -1,6 +1,6 @@
 # THIS FILE IS AUTO-GENERATED. PLEASE DO NOT MODIFY
 # version file for ldap3cli
-# generated on 2017-05-03 07:35:07.367560
+# generated on 2017-05-09 08:06:17.145789
 # on system uname_result(system='Windows', node='ELITE10GC', release='10', version='10.0.14393', machine='AMD64', processor='Intel64 Family 6 Model 58 Stepping 9, GenuineIntel')
 # with Python 3.6.1 - ('v3.6.1:69c0db5', 'Mar 21 2017 18:41:36') - MSC v.1900 64 bit (AMD64)
 #
