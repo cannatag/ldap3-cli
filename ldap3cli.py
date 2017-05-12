@@ -601,15 +601,13 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
                     for attr in response['attributes']:
                         untagged_attr, _, _ = attr.partition(';')
                         # preserve original schema case
-                        if untagged_attr in session.connection.server.schema.attribute_types:
-                            for name in session.connection.server.schema.attribute_types[untagged_attr].name:
-                                if untagged_attr.lower() == name.lower():
-                                    untagged_attr = name
+                        if session.connection.server.schema:
+                            if untagged_attr in session.connection.server.schema.attribute_types:
+                                for name in session.connection.server.schema.attribute_types[untagged_attr].name:
+                                    if untagged_attr.lower() == name.lower():
+                                        untagged_attr = name
                         returned_attrs[untagged_attr] = ''
 
-            # if len(returned_attrs) == len(attrs) and '*' not in attrs and '+' not in attrs:  # keep original attrs sequence
-            #     returned_attrs = attrs
-            # else:
             returned_attrs = sorted(list(returned_attrs.keys()))
 
             headers = ['#', 'DN'] + list(returned_attrs)
