@@ -1,9 +1,12 @@
 import socket
 
 import click
+
 from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE, NONE, DSA, SCHEMA, ALL, STRING_TYPES, ANONYMOUS, SASL, NTLM, BASE, LEVEL, SUBTREE
 from ldap3.core.exceptions import LDAPSocketOpenError, LDAPInvalidFilterError
 from ldap3.protocol.oid import decode_syntax
+from ldap3.utils.conv import to_unicode
+from ldap3.utils.ciDict import CaseInsensitiveDict
 
 desc_bg = 'black'
 desc_fg = 'green'
@@ -50,7 +53,10 @@ def display_entry(counter, entry):
 def display_response(counter, response):
     echo_detail(str(counter).rjust(4), click.style(response['dn'], fg=title_fg, bg=title_bg, bold=title_bold))
     for attribute in sort_if_sequence(response['attributes']):
-        echo_detail(' ' * 7 + attribute, response['attributes'][attribute], level=0)
+        if isinstance(response['attributes'][attribute], SEQUENCE_TYPES):
+            echo_detail(' ' * 7 + attribute, sort_if_sequence(response['attributes'][attribute]), level=0)
+        else:
+            echo_detail(' ' * 7 + attribute, response['attributes'][attribute], level=0)
 
 
 def syntax_description(syntax):
@@ -185,8 +191,12 @@ class Session(object):
             self.authentication = SASL
         elif authentication == 'ntlm':
             self.authentication = NTLM
-        else:
+        elif authentication == 'simple':
             self.authentication = SIMPLE
+        elif not authentication and user or password:
+            self.authentication = SIMPLE
+        else:
+            self.authentication = ANONYMOUS
         if get_info == 'none':
             self.info = NONE
         elif get_info == 'dsa':
@@ -257,7 +267,7 @@ class Session(object):
                     else:
                         click.secho(str(e.args), color='red', bold=True)
                 raise click.ClickException('unable to connect to %s on port %s - reason: %s' % (self.host, self.port, e.args[0] if isinstance(e.args, SEQUENCE_TYPES) else e))
-            self.login_result = self.connection.last_error
+            self.login_result = self.connection.result['description'] + ' - ' + self.connection.result['message']
 
 @click.group()
 @click.option('-a', '--authentication', type=click.Choice(['anonymous', 'simple', 'sasl', 'ntlm']), help='type of authentication')
@@ -291,6 +301,7 @@ def cli(ctx, host, port, user, password, ssl, request_password, authentication, 
 def info(session, type, json, sort, max_width):
     """Bind and get info"""
     session.connect()
+    sort_col = 0
     if sort:
         if sort == 'name':
             sort_col = 1
@@ -298,8 +309,6 @@ def info(session, type, json, sort, max_width):
             sort_col = 2
         elif sort == 'type':
             sort_col = 3
-        else:
-            sort_col = 0
 
     if type in ['connection', 'all']:
         if session.valid:
@@ -553,7 +562,7 @@ def info(session, type, json, sort, max_width):
 @click.option('-j', '--json', is_flag=True, help='format output as JSON')
 @click.option('-l', '--ldif', is_flag=True, help='format output as LDIF')
 @click.option('-i', '--listing', is_flag=True, help='format output as list')
-@click.option('-p', '--paged', type=int, help='paged search')
+@click.option('-p', '--paged', type=int, default=999, help='paged search size (0 to disable')
 @click.argument('base', type=click.STRING)
 @click.argument('filter', required=False, default='(objectclass=*)')
 @click.argument('attrs', nargs=-1, type=click.STRING)
@@ -586,15 +595,22 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
         if responses:
             tot = 0
             table = []
-            returned_attrs = set()
+            returned_attrs = CaseInsensitiveDict()
             for response in responses:
                 if response['type'] == 'searchResEntry':
                     for attr in response['attributes']:
                         untagged_attr, _, _ = attr.partition(';')
-                        returned_attrs.add(untagged_attr)
+                        # preserve original schema case
+                        if untagged_attr in session.connection.server.schema.attribute_types:
+                            for name in session.connection.server.schema.attribute_types[untagged_attr].name:
+                                if untagged_attr.lower() == name.lower():
+                                    untagged_attr = name
+                        returned_attrs[untagged_attr] = ''
 
-            if len(returned_attrs) == len(attrs) and '*' not in attrs and '+' not in attrs:  # keep original attrs sequence
-                returned_attrs = attrs
+            # if len(returned_attrs) == len(attrs) and '*' not in attrs and '+' not in attrs:  # keep original attrs sequence
+            #     returned_attrs = attrs
+            # else:
+            returned_attrs = sorted(list(returned_attrs.keys()))
 
             headers = ['#', 'DN'] + list(returned_attrs)
             other = []
@@ -630,20 +646,20 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
                                 styles=['title', 'desc', 'value'],
                                 level=0)
 
-            echo_detail('Total entries', tot)
             if not json and not ldif:
                 if other:
                     table = []
                     for i, response in enumerate(other):
-                        table.append([str(i).rjust(len(str(len(responses)))), response.pop('type'), [key + ': ' + str(value) for key, value in response.items()]])
-                    build_table('Other',
-                                ['#', 'type', 'payload'],
+                        if response['type'] == 'searchResRef':
+                            table.append([str(i).rjust(len(str(len(responses)))), [to_unicode(uri) for uri in response['uri']]])
+                    build_table('Search Referrals',
+                                ['#', 'URI'],
                                 table,
-                                styles=['title', 'desc', 'value'],
+                                styles=['title', 'value'],
                                 level=0)
 
         else:
-            echo_detail('No entries found', error=True)
+            echo_detail('Result', session.connection.result['description'] + ' - ' + session.connection.result['message'], error=True)
         session.done()
     else:
         echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
