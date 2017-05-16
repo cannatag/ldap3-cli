@@ -12,6 +12,7 @@ package_name = str(version_dict['package_name'])
 package_folder = str(version_dict['package_folder'])
 status = str(version_dict['status'])
 print([i.strip() for i in open('requirements.txt').readlines()])
+
 setup(
     name=package_name,
     version=version,
@@ -23,7 +24,7 @@ setup(
     description=description,
     keywords='python3 python2 ldap',
     url=url,
-    classifiers=['Development Status :: 2 - Pre-Alpha',
+    classifiers=['Development Status :: 3 - Alpha',
                  'Environment :: Console',
                  'Intended Audience :: System Administrators',
                  'Operating System :: MacOS :: MacOS X',

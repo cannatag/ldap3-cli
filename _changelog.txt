@@ -1,2 +1,18 @@
-- 0.0.1a not yet released
-    setting dev environment
+- 0.1.0 not yet released
+    - status moved to Alpha
+    - added -o parameter in search for requesting operational attributes
+
+- 0.0.3 not released
+    - added paged search option
+    - added tabular output for search results
+
+- 0.0.2 not released
+    - added search command
+
+- 0.0.1 not released
+    - added info command
+    - added connect, server, schema subcommand for info
+
+- 0.0.1a1 not released
+    - defined dev environment structure
+    - defined global parameters
