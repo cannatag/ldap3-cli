@@ -1,4 +1,8 @@
-- 0.0.3 not yet released
+- 0.1.0 not yet released
+    - status moved to Alpha
+    - added -o parameter in search for requesting operational attributes
+
+- 0.0.3 not released
     - added paged search option
     - added tabular output for search results
 

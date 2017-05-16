@@ -1,8 +1,12 @@
 # changes file for ldap3cli
-# generated on 2017-05-09 08:06:17.152786
-# version 0.0.3
+# generated on 2017-05-16 17:31:49.373079
+# version 0.1.0
 
-- 0.0.3 not yet released
+- 0.1.0 not yet released
+    - status moved to Alpha
+    - added -o parameter in search for requesting operational attributes
+
+- 0.0.3 not released
     - added paged search option
     - added tabular output for search results
 

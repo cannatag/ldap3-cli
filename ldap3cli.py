@@ -563,10 +563,12 @@ def info(session, type, json, sort, max_width):
 @click.option('-l', '--ldif', is_flag=True, help='format output as LDIF')
 @click.option('-i', '--listing', is_flag=True, help='format output as list')
 @click.option('-p', '--paged', type=int, default=999, help='paged search size (0 to disable')
+@click.option('-m', '--max-width', type=int, default=50, help='max column width')
+@click.option('-o', '--operational', is_flag=True, help='request operational attributes')
 @click.argument('base', type=click.STRING)
 @click.argument('filter', required=False, default='(objectclass=*)')
 @click.argument('attrs', nargs=-1, type=click.STRING)
-def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
+def search(session, base, filter, attrs, scope, json, ldif, paged, listing, max_width, operational):
     """Search and return entries"""
     session.connect()
     if session.valid:
@@ -585,10 +587,10 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
             attrs = (filter, ) + attrs
         try:
             if not paged:
-                session.connection.search(base, search_filter, search_scope, attributes=attrs)
+                session.connection.search(base, search_filter, search_scope, attributes=attrs, get_operational_attributes=operational)
                 responses = session.connection.response
             else:
-                responses = session.connection.extend.standard.paged_search(base, search_filter, search_scope, attributes=attrs, paged_size=paged, generator=False)
+                responses = session.connection.extend.standard.paged_search(base, search_filter, search_scope, attributes=attrs, get_operational_attributes=operational, paged_size=paged, generator=False)
         except LDAPInvalidFilterError:
             raise click.ClickException('invalid filter: %s' % filter)
 
@@ -600,7 +602,7 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
                 if response['type'] == 'searchResEntry':
                     for attr in response['attributes']:
                         untagged_attr, _, _ = attr.partition(';')
-                        # preserve original schema case
+                        # peserve original schema case
                         if session.connection.server.schema:
                             if untagged_attr in session.connection.server.schema.attribute_types:
                                 for name in session.connection.server.schema.attribute_types[untagged_attr].name:
@@ -642,6 +644,7 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing):
                                 headers,
                                 table,
                                 styles=['title', 'desc', 'value'],
+                                max_width=max_width,
                                 level=0)
 
             if not json and not ldif:
