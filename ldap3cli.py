@@ -25,6 +25,7 @@ INDENT = 2
 H_SEPARATOR = ' | '
 MAX_COL_WIDTH = 80
 
+
 def sort_if_sequence(value):
     if isinstance(value, SEQUENCE_TYPES):
         return sorted(value, key=lambda x: x.lower() if hasattr(x, 'lower') else x)
@@ -299,7 +300,8 @@ def cli(ctx, host, port, user, password, ssl, request_password, authentication, 
 @click.option('-s', '--sort', type=click.Choice(['name', 'oid', 'type']), default='name', help='sorting column')
 @click.argument('type', type=click.Choice(['connection', 'server', 'schema', 'all']), default='connection')
 def info(session, type, json, sort, max_width):
-    """Bind and get info"""
+    """Bind and get info
+    TYPE can be connection, server, schema or all"""
     session.connect()
     sort_col = 0
     if sort:
@@ -569,7 +571,8 @@ def info(session, type, json, sort, max_width):
 @click.argument('filter', required=False, default='(objectclass=*)')
 @click.argument('attrs', nargs=-1, type=click.STRING)
 def search(session, base, filter, attrs, scope, json, ldif, paged, listing, max_width, operational):
-    """Search and return entries"""
+    """Search and return entries
+    If no filter is specified the catch-all filter (objectclass=*) is used"""
     session.connect()
     if session.valid:
         if scope == 'base':
