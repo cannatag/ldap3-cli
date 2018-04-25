@@ -1,4 +1,4 @@
-pyasn1>=0.2.3
-ldap3>=2.2.2
+pyasn1>=0.4.2
+ldap3>=2.5
 click>=6.7
-colorama>=0.3.7
+colorama>=0.3.9

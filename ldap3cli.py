@@ -1,25 +1,27 @@
-import socket
+from datetime import datetime
 
 import click
-
 from ldap3 import Server, Connection, SEQUENCE_TYPES, SIMPLE, NONE, DSA, SCHEMA, ALL, STRING_TYPES, ANONYMOUS, SASL, NTLM, BASE, LEVEL, SUBTREE
-from ldap3.core.exceptions import LDAPSocketOpenError, LDAPInvalidFilterError
+from ldap3.core.exceptions import LDAPSocketOpenError, LDAPInvalidFilterError, LDAPExceptionError, LDAPOperationResult
 from ldap3.protocol.oid import decode_syntax
 from ldap3.utils.conv import to_unicode
 from ldap3.utils.ciDict import CaseInsensitiveDict
 
-desc_bg = 'black'
-desc_fg = 'green'
-desc_bold = True
-value_bg = 'black'
-value_fg = 'white'
-value_bold = False
-error_fg = 'red'
-error_bg = 'black'
-error_bold = True
-title_fg = 'yellow'
-title_bg = 'black'
-title_bold = True
+# Styles
+ST_DESCR = 'descr'
+ST_VALUE = 'value'
+ST_ERROR = 'error'
+ST_TITLE = 'title'
+ST_DEBUG = 'debug'
+ST_TIMED = 'timed'
+
+STYLES = {ST_DESCR: {'fg': 'green', 'bg': None, 'bold': True, 'dim': False, 'underline': False, 'blink': False, 'reverse': False},
+          ST_VALUE: {'fg': 'white', 'bg': None, 'bold': False, 'dim': False, 'underline': False, 'blink': False, 'reverse': False},
+          ST_ERROR: {'fg': 'yellow', 'bg': 'red', 'bold': True, 'dim': False, 'underline': False, 'blink': False, 'reverse': False},
+          ST_TITLE: {'fg': 'yellow', 'bg': None, 'bold': True, 'dim': False, 'underline': False, 'blink': False, 'reverse': False},
+          ST_DEBUG: {'fg': 'magenta', 'bg': 'cyan', 'bold': True, 'dim': False, 'underline': False, 'blink': False, 'reverse': False},
+          ST_TIMED: {'fg': 'magenta', 'bg': 'green', 'bold': True, 'dim': False, 'underline': False, 'blink': False, 'reverse': False}
+          }
 
 INDENT = 2
 H_SEPARATOR = ' | '
@@ -33,26 +35,27 @@ def sort_if_sequence(value):
 
 
 def apply_style(style, string):
-    if style == 'title':
-        return click.style(string, fg = title_fg, bg=title_bg, bold=title_bold)
-    elif style == 'desc':
-        return click.style(string, fg = desc_fg, bg=desc_bg, bold=desc_bold)
-    elif style == 'value':
-        return click.style(string, fg = value_fg, bg=value_bg, bold=value_bold)
-    elif style == 'error':
-        return click.style(string, fg = error_fg, bg=error_bg, bold=error_bold)
-    else:
-        return string
+    if style in STYLES:
+        return click.style(string,
+                           fg=STYLES[style]['fg'],
+                           bg=STYLES[style]['bg'],
+                           bold=STYLES[style]['bold'],
+                           dim=STYLES[style]['dim'],
+                           underline=STYLES[style]['underline'],
+                           blink=STYLES[style]['blink'],
+                           reverse=STYLES[style]['reverse']
+                           )
+    return string
 
 
 def display_entry(counter, entry):
-    echo_detail(str(counter).rjust(4), click.style(entry.entry_dn, fg=title_fg, bg=title_bg, bold=title_bold))
+    echo_detail(str(counter).rjust(4), apply_style(ST_TITLE, entry.entry_dn))
     for attribute in sort_if_sequence(entry.entry_attributes):
         echo_detail(attribute, entry[attribute], level=5)
 
 
 def display_response(counter, response):
-    echo_detail(str(counter).rjust(4), click.style(response['dn'], fg=title_fg, bg=title_bg, bold=title_bold))
+    echo_detail(str(counter).rjust(4), apply_style(ST_TITLE, response['dn']))
     for attribute in sort_if_sequence(response['attributes']):
         if isinstance(response['attributes'][attribute], SEQUENCE_TYPES):
             echo_detail(' ' * 7 + attribute, sort_if_sequence(response['attributes'][attribute]), level=0)
@@ -85,24 +88,24 @@ def list_to_string(list_object):
     return r[:-2] if r else ''
 
 
-def ljust_style(string, col, styles, lengths, fill=' '):
+def ljust_style(string, col, columns_style, lengths, fill=' '):
     if not string:
         string = ''
     length = lengths[col]
     unstyled = click.unstyle(string)
-    if len(unstyled) == len(string): # not already styled
-        if styles:
-            if col >= len(styles):
-                string = apply_style(styles[:-1], string)  # apply last style for remaining fields
+    if len(unstyled) == len(string):  # not already styled
+        if columns_style:
+            if col >= len(columns_style):
+                string = apply_style(columns_style[-1], string)  # apply last style for remaining fields
             else:
-                string = apply_style(styles[col], string)
+                string = apply_style(columns_style[col], string)
     if len(unstyled) < length:
         return string + fill * (length - len(unstyled))
 
     return string
 
 
-def build_table(name, heading, rows, styles=None, sort=None, max_width=MAX_COL_WIDTH, level=0):
+def build_table(name, heading, rows, colums_style=None, sort=None, max_width=MAX_COL_WIDTH, level=0):
     if rows:
         if max_width == 0:
             max_width = 99999
@@ -118,7 +121,7 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=MAX_COL_W
                     else:
                         lengths[col] = max(len(click.unstyle(str(row[col]))[:max_width]), lengths[col])
         if heading:
-            table = [H_SEPARATOR.join([ljust_style(str(element)[:max_width], col, styles, lengths) for col, element in enumerate(heading)]),
+            table = [H_SEPARATOR.join([ljust_style(str(element)[:max_width], col, colums_style, lengths) for col, element in enumerate(heading)]),
                      H_SEPARATOR.join([''.ljust(min(lengths[col], max_width), '=') for col, element in enumerate(heading)])]
         else:
             table = []
@@ -132,11 +135,11 @@ def build_table(name, heading, rows, styles=None, sort=None, max_width=MAX_COL_W
                 subrow = []
                 for col in range(max_cols):
                     if isinstance(row[col], SEQUENCE_TYPES):
-                        subrow.append(ljust_style(str(row[col][depth])[:max_width], col, styles, lengths) if row[col] and len(row[col]) > depth else ljust_style('', col, styles, lengths))
+                        subrow.append(ljust_style(str(row[col][depth])[:max_width], col, colums_style, lengths) if row[col] and len(row[col]) > depth else ljust_style('', col, colums_style, lengths))
                     elif depth == 0:
-                        subrow.append(ljust_style(str(row[col])[:max_width], col, styles, lengths))
+                        subrow.append(ljust_style(str(row[col])[:max_width], col, colums_style, lengths))
                     else:
-                        subrow.append(ljust_style('', col, styles, lengths))
+                        subrow.append(ljust_style('', col, colums_style, lengths))
                 table.append(H_SEPARATOR.join(subrow))
     else:
         table = ['']
@@ -151,15 +154,15 @@ def echo_empty_line(number=1):
 
 
 def echo_title(string, level=0):
-    click.secho(' ' * INDENT * level + string, fg=title_fg, bg=title_bg, bold=title_bold)
+    click.echo(apply_style(ST_TITLE, ' ' * INDENT * level + string))
 
 
 def echo_detail(desc, value, error=False, level=1):
-    click.secho(' ' * INDENT * level + desc + (': ' if desc.strip() else ''), fg=desc_fg, bg=desc_bg, bold=desc_bold, nl=False)
+    click.echo(apply_style(ST_DESCR, ' ' * INDENT * level + desc + (': ' if desc.strip() else '')), nl=False)
     if error:
-        click.secho(str(value), fg=error_fg, bg=error_bg, bold=error_bold)
+        click.echo(apply_style(ST_ERROR, str(value)))
     else:
-        click.secho(str(value), fg=value_fg, bg=value_bg, bold=value_bold)
+        click.echo(apply_style(ST_VALUE, str(value)))
 
 
 def echo_detail_multiline(desc, value, error=False, level=1):
@@ -175,6 +178,10 @@ def echo_detail_multiline(desc, value, error=False, level=1):
             first = True
         else:
             echo_detail(' ' * len(desc), line, level=level)
+
+
+def echo_debug(message):
+    click.echo(apply_style(ST_TIMED, datetime.now().isoformat()) + ' - ' + apply_style(ST_DEBUG, message))
 
 
 class Session(object):
@@ -209,7 +216,7 @@ class Session(object):
         self.usage = usage
         self.debug = debug
         self.server = Server(self.host, self.port, self.use_ssl, get_info=self.info)
-        self.connection = Connection(self.server, self.user, self.password, authentication=self.authentication, raise_exceptions=False, collect_usage=self.usage)
+        self.connection = Connection(self.server, self.user, self.password, authentication=self.authentication, raise_exceptions=True, collect_usage=self.usage)
         self.login_result = None
 
     @property
@@ -251,24 +258,30 @@ class Session(object):
             build_table('Session metrics',
                         [],
                         table,
-                        styles=['title', 'desc', 'value'],
+                        colums_style=[ST_TITLE, ST_DESCR, ST_VALUE],
                         level=0)
 
     def connect(self):
         if self.connection and not self.connection.bound:
+            if self.debug:
+                echo_debug('opening connection to %s on port %s' % (self.host, self.port))
+            try:
+                self.connection.open()
+            except LDAPSocketOpenError as e:
+                raise click.ClickException('unable to connect to %s on port %s - reason: %s' % (self.host, self.port, str(e.args[0]) if isinstance(e.args, SEQUENCE_TYPES) else str(e.args)))
             try:
                 self.connection.bind()
-            except LDAPSocketOpenError as e:
+            except LDAPExceptionError as e:
+                raise click.ClickException('unable to bind to %s on port %s - reason: %s' % (self.host, self.port, str(e.args[0]) if isinstance(e.args, SEQUENCE_TYPES) else str(e.args)))
+            except LDAPOperationResult as e:
+                raise click.ClickException('server response when binding to %s on port %s - reason: %s' % (self.host, self.port, str(e).replace(' - None', '')))
+            finally:
                 if self.debug:
-                    if isinstance(e.args[1], SEQUENCE_TYPES):
-                        for arg in e.args[1]:
-                            click.secho(str(arg[0]) + ' ', fg='yellow', nl=False)
-                            click.secho(str(arg[2]) + ' ', fg='red', bold=True, nl=False)
-                            click.secho(str(arg[3]) + ' ', fg='red')
-                    else:
-                        click.secho(str(e.args), color='red', bold=True)
-                raise click.ClickException('unable to connect to %s on port %s - reason: %s' % (self.host, self.port, e.args[0] if isinstance(e.args, SEQUENCE_TYPES) else e))
+                    echo_debug('REQUEST:' + str(self.connection.request))
+                if self.debug:
+                    echo_debug('RESULT:' + str(self.connection.result))
             self.login_result = self.connection.result['description'] + ' - ' + self.connection.result['message']
+
 
 @click.group()
 @click.option('-a', '--authentication', type=click.Choice(['anonymous', 'simple', 'sasl', 'ntlm']), help='type of authentication')
@@ -281,6 +294,7 @@ class Session(object):
 @click.option('-i', '--server_info', type=click.Choice(['none', 'dsa', 'schema', 'all']), default='all', help='info requested to server')
 @click.option('-m', '--metrics', is_flag=True, help='display usage metrics')
 @click.option('-d', '--debug', is_flag=True, help='enable debug output')
+@click.version_option()
 @click.pass_context
 def cli(ctx, host, port, user, password, ssl, request_password, authentication, server_info, metrics, debug):
     """LDAP for humans"""
@@ -293,7 +307,7 @@ def cli(ctx, host, port, user, password, ssl, request_password, authentication, 
     ctx.obj = Session(host, port, ssl, user, password, authentication, server_info, metrics, debug)
 
 
-@cli.command()
+@click.command()
 @click.pass_obj
 @click.option('-j', '--json', is_flag=True, help='format output as JSON')
 @click.option('-m', '--max-width', type=int, default=50, help='max column width')
@@ -319,7 +333,7 @@ def info(session, type, json, sort, max_width):
                         [['Connection ', 'Status', 'valid'],
                          ['', 'Host', session.connection.server.host],
                          ['', 'Port', session.connection.server.port],
-                         ['', 'Encryption' if session.use_ssl else apply_style('error', 'Encryption'), 'SSL' if session.use_ssl else 'CLEARTEXT'],
+                         ['', 'Encryption' if session.use_ssl else apply_style(ST_ERROR, 'Encryption'), 'SSL' if session.use_ssl else 'CLEARTEXT'],
                          ['', 'User', session.connection.user],
                          ['', 'Authentication', session.connection.authentication],
                          ['', '', ''],
@@ -328,13 +342,13 @@ def info(session, type, json, sort, max_width):
                          ['', 'Local', ' - '.join([str(el) for el in session.connection.socket.getsockname()])],
                          ['', 'Remote', ' - '.join([str(el) for el in session.connection.socket.getpeername()])],
                          ['', '', ''],
-                         ['TLS        ', 'Status' if session.connection.server.ssl else apply_style('error', 'Status'), 'established' if session.connection.server.ssl else 'NOT established'],
+                         ['TLS        ', 'Status' if session.connection.server.ssl else apply_style(ST_ERROR, 'Status'), 'established' if session.connection.server.ssl else 'NOT established'],
                          ['', 'Version', session.connection.socket.version() if session.connection.server.ssl else '-'],
                          ['', 'Cipher', ' - '.join([str(el) for el in session.connection.socket.cipher()]) if session.connection.server.ssl else '-'],
-                         ['Server info', 'Status' if session.connection.server.info else apply_style('error', 'Status'), 'No info returned by server' if not session.connection.server.info else 'Present - use "info server" to show'],
-                         ['Schema info', 'Status' if session.connection.server.schema else apply_style('error', 'Status'), 'No schema returned by server' if not session.connection.server.schema else 'Present - use "info schema" to show']
+                         ['Server info', 'Status' if session.connection.server.info else apply_style(ST_ERROR, 'Status'), 'No info returned by server' if not session.connection.server.info else 'Present - use "info server" to show'],
+                         ['Schema info', 'Status' if session.connection.server.schema else apply_style(ST_ERROR, 'Status'), 'No schema returned by server' if not session.connection.server.schema else 'Present - use "info schema" to show']
                          ],
-                        styles=['title', 'desc', 'value'],
+                        colums_style=[ST_TITLE, ST_DESCR, ST_VALUE],
                         max_width=max_width)
         else:
             echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
@@ -369,7 +383,7 @@ def info(session, type, json, sort, max_width):
                     build_table('Server (DSA) info',
                                 [],
                                 table,
-                                styles=['title', 'desc', 'value'],
+                                colums_style=[ST_TITLE, ST_DESCR, ST_VALUE],
                                 max_width=max_width,
                                 level=0)
 
@@ -389,7 +403,7 @@ def info(session, type, json, sort, max_width):
                                     ['type', 'name', 'OID', 'description'],
                                     table,
                                     sort=(0, sort_col),
-                                    styles=['title', 'desc', 'value'],
+                                    colums_style=[ST_TITLE, ST_DESCR, ST_VALUE],
                                     max_width=max_width,
                                     level=0)
 
@@ -411,10 +425,10 @@ def info(session, type, json, sort, max_width):
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
                                       element[1].kind,
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.object_classes.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -427,10 +441,10 @@ def info(session, type, json, sort, max_width):
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
                                       syntax_description(element[1].syntax),
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.attribute_types.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
 
@@ -444,10 +458,10 @@ def info(session, type, json, sort, max_width):
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
                                       list_to_string(element[1].syntax),
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
-                                    for element in session.connection.server.schema.matching_rules.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                     for element in session.connection.server.schema.matching_rules.items()],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -460,10 +474,10 @@ def info(session, type, json, sort, max_width):
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
                                       list_to_string(element[1].apply_to),
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.matching_rule_uses.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -475,10 +489,10 @@ def info(session, type, json, sort, max_width):
                                     ['name', 'OID', 'obsolete', 'description'],
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.dit_content_rules.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -491,10 +505,10 @@ def info(session, type, json, sort, max_width):
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
                                       list_to_string(element[1].name_form),
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.dit_structure_rules.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -507,10 +521,10 @@ def info(session, type, json, sort, max_width):
                                     [[list_to_string(element[1].name),
                                       element[1].oid,
                                       list_to_string(element[1].object_class),
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
+                                      apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
                                      for element in session.connection.server.schema.name_forms.items()],
-                                    styles=['desc', 'value', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -519,22 +533,22 @@ def info(session, type, json, sort, max_width):
                     if session.connection.server.schema.ldap_syntaxes:
                         echo_empty_line()
                         temp_table = [[element[1].oid_info[2] if element[1].oid_info else element[1].oid,
-                                      element[1].oid,
-                                      click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold) if element[1].obsolete else '',
-                                      element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
-                                     for element in session.connection.server.schema.ldap_syntaxes.items()]
+                                       element[1].oid,
+                                       apply_style(ST_ERROR, 'OBSOLETE') if element[1].obsolete else '',
+                                       element[1].description if element[1].description else (str(element[1].oid_info[3]) if element[1].oid_info else '')]
+                                      for element in session.connection.server.schema.ldap_syntaxes.items()]
 
                         for row in temp_table:
                             if '[OBSOLETE]' in row[0] and not row[2]:
-                                row[2] = click.style('OBSOLETE', fg=error_fg, bg=error_bg, bold=error_bold)
+                                row[2] = apply_style(ST_ERROR, 'OBSOLETE')
                                 row[0] = row[0].replace('[OBSOLETE]', '')
                             if '[DEPRECATED]' in row[0] and not row[2]:
-                                row[2] = click.style('DEPRECATED', fg=error_fg, bg=error_bg, bold=error_bold)
+                                row[2] = apply_style(ST_ERROR, 'DEPRECATED')
                                 row[0] = row[0].replace('[DEPRECATED]', '')
                         build_table('LDAP syntaxes',
                                     ['name', 'OID', 'obsolete', 'description'],
                                     temp_table,
-                                    styles=['desc', 'value', 'error', 'title'],
+                                    colums_style=[ST_DESCR, ST_VALUE, ST_ERROR, ST_TITLE],
                                     sort=sort_col,
                                     max_width=max_width)
                     else:
@@ -548,7 +562,7 @@ def info(session, type, json, sort, max_width):
                         build_table('',
                                     [],
                                     table,
-                                    styles=['title', 'desc', 'value'],
+                                    colums_style=[ST_TITLE, ST_DESCR, ST_VALUE],
                                     max_width=max_width,
                                     sort=sort_col,
                                     level=0)
@@ -558,7 +572,7 @@ def info(session, type, json, sort, max_width):
     session.done()
 
 
-@cli.command()
+@click.command()
 @click.pass_obj
 @click.option('-s', '--scope', type=click.Choice(['base', 'level', 'subtree']), default='subtree', help='scope of search')
 @click.option('-j', '--json', is_flag=True, help='format output as JSON')
@@ -587,7 +601,7 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing, max_
             search_filter = filter
         else:
             search_filter = '(objectclass=*)'
-            attrs = (filter, ) + attrs
+            attrs = (filter,) + attrs
         try:
             if not paged:
                 session.connection.search(base, search_filter, search_scope, attributes=attrs, get_operational_attributes=operational)
@@ -646,7 +660,7 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing, max_
                     build_table('Response',
                                 headers,
                                 table,
-                                styles=['title', 'desc', 'value'],
+                                colums_style=[ST_TITLE, ST_DESCR, ST_VALUE],
                                 max_width=max_width,
                                 level=0)
 
@@ -659,7 +673,7 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing, max_
                     build_table('Search Referrals',
                                 ['#', 'URI'],
                                 table,
-                                styles=['title', 'value'],
+                                colums_style=[ST_TITLE, ST_VALUE],
                                 level=0)
 
         else:
@@ -668,5 +682,6 @@ def search(session, base, filter, attrs, scope, json, ldif, paged, listing, max_
     else:
         echo_detail('Status', 'NOT valid [' + str(session.login_result) + ']', error=True)
 
-if __name__ == '__main__':
-    cli()
+
+cli.add_command(info)
+cli.add_command(search)
